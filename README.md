@@ -18,7 +18,7 @@
 
 它解决的是 ChatGPT 与 Codex 之间最后一段「上下文交接」：
 
-\`\`\`text
+```text
 ChatGPT
   ↓
 Local Bridge
@@ -26,7 +26,7 @@ Local Bridge
 Codex App
   ↓
 本地项目 / 已有会话
-\`\`\`
+```
 
 你可以在 ChatGPT 中完成需求分析、方案设计和任务拆解，然后直接把当前回复发送到本机 Codex。
 
@@ -65,7 +65,7 @@ Bridge 会读取本机 Codex 状态，并显示可用项目。
 
 ChatGPT 最新回复旁会出现：
 
-\`Codex →\`
+`Codex →`
 
 即使侧栏已经收起，也可以直接发送。
 
@@ -117,7 +117,7 @@ ChatGPT 最新回复旁会出现：
 
 ## 工作流
 
-\`\`\`text
+```text
 ① 在 ChatGPT 中讨论需求
         ↓
 ② 得到实施方案
@@ -131,7 +131,7 @@ ChatGPT 最新回复旁会出现：
 ⑥ 发送到 Codex
         ↓
 ⑦ Codex 在本地继续执行
-\`\`\`
+```
 
 ChatGPT 负责 **Think / Plan**。
 
@@ -156,9 +156,9 @@ Local Bridge 负责中间的 **Handoff**。
 
 双击：
 
-\`\`\`text
+```text
 install-bridge.command
-\`\`\`
+```
 
 安装完成后会生成一个 **Pairing Token**，请复制保存。
 
@@ -166,15 +166,15 @@ install-bridge.command
 
 打开：
 
-\`\`\`text
+```text
 chrome://extensions
-\`\`\`
+```
 
 然后：
 
 1. 开启右上角「开发者模式」
 2. 点击「加载已解压的扩展程序」
-3. 选择项目中的 \`extension\` 文件夹
+3. 选择项目中的 `extension` 文件夹
 
 ### 3. 连接 Bridge
 
@@ -214,9 +214,9 @@ Bridge 会把当前 ChatGPT 内容追加到这个会话，而不是重新创建�
 
 直接点击 ChatGPT 回复旁的：
 
-\`\`\`text
+```text
 Codex →
-\`\`\`
+```
 
 即可使用之前保存的项目和发送方式快速发送。
 
@@ -230,9 +230,9 @@ Sol → Codex Local Bridge 采用本地优先的设计。
 
 Bridge 仅监听：
 
-\`\`\`text
+```text
 127.0.0.1:37821
-\`\`\`
+```
 
 不会监听公网地址。
 
@@ -246,9 +246,9 @@ Token 用于防止其他网页或本机程序未经授权调用 Bridge。
 
 以下数据存储在：
 
-\`\`\`text
+```text
 ~/.sol-codex-bridge/
-\`\`\`
+```
 
 包括：
 
@@ -263,7 +263,7 @@ Token 用于防止其他网页或本机程序未经授权调用 Bridge。
 
 Chrome 扩展只与以下目标通信：
 
-\`\`\`text
+```text
 ChatGPT
       ↕
 Chrome Extension
@@ -271,7 +271,7 @@ Chrome Extension
 127.0.0.1 Local Bridge
       ↕
 Codex
-\`\`\`
+```
 
 Bridge 不会主动把任务内容发送到额外的第三方服务。
 
@@ -279,7 +279,7 @@ Bridge 不会主动把任务内容发送到额外的第三方服务。
 
 ## 项目结构
 
-\`\`\`text
+```text
 sol-codex-bridge/
 │
 ├── extension/               # Chrome 扩展
@@ -287,7 +287,7 @@ sol-codex-bridge/
 ├── install-bridge.command   # macOS 安装脚本
 ├── assets/                  # README / 项目图片
 └── README.md
-\`\`\`
+```
 
 ---
 
@@ -295,10 +295,10 @@ sol-codex-bridge/
 
 Bridge 提供本地自检：
 
-\`\`\`sh
+```sh
 cd bridge
 npm run self-test
-\`\`\`
+```
 
 安装或更新扩展后，建议分别测试“项目新任务”和“已有会话”，确保 ChatGPT → Bridge → Codex 整条链路工作正常。
 
@@ -312,7 +312,7 @@ Sol → Codex 并不是另一个 Coding Agent。
 
 > **让 ChatGPT 的推理与规划能力，能够自然地交给 Codex 的本地执行环境。**
 
-\`\`\`text
+```text
 ChatGPT / Sol
       ↓
   Think & Plan
@@ -322,7 +322,7 @@ ChatGPT / Sol
      Codex
       ↓
  Build & Execute
-\`\`\`
+```
 
 ---
 
