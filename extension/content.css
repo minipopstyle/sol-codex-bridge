@@ -1,0 +1,178 @@
+.sol-codex-inline-host {
+  position: relative;
+}
+
+.sol-codex-inline-wrap {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  width: 100%;
+  margin: 12px 10px 4px auto;
+  padding-right: 2px;
+  position: relative;
+  z-index: 10;
+  pointer-events: auto;
+}
+
+.sol-codex-inline-btn {
+  appearance: none;
+  -webkit-appearance: none;
+  height: 30px;
+  min-height: 30px;
+  padding: 0 12px 0 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid rgba(127, 127, 127, 0.16);
+  border-color: color-mix(in srgb, currentColor 10%, transparent);
+  background: rgba(127, 127, 127, 0.045);
+  background: color-mix(in srgb, currentColor 4%, transparent);
+  color: currentColor;
+  border-radius: 999px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  user-select: none;
+  pointer-events: auto;
+  cursor: pointer;
+  opacity: 0.9;
+  box-shadow: none;
+  transform: translateZ(0);
+  transition:
+    background-color 180ms ease,
+    border-color 180ms ease,
+    opacity 180ms ease,
+    transform 110ms ease;
+}
+
+
+.sol-codex-inline-btn:hover:not(:disabled) {
+  opacity: 1;
+  background: rgba(127, 127, 127, 0.08);
+  background: color-mix(in srgb, currentColor 7%, transparent);
+  border-color: rgba(127, 127, 127, 0.24);
+  border-color: color-mix(in srgb, currentColor 16%, transparent);
+}
+
+.sol-codex-inline-btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.sol-codex-inline-btn:focus-visible {
+  outline: 2px solid color-mix(in srgb, currentColor 24%, transparent);
+  outline-offset: 2px;
+}
+
+.sol-codex-inline-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
+.sol-codex-inline-label {
+  display: inline-block;
+  transform: translateX(0);
+  transition: transform 180ms cubic-bezier(.2,.8,.2,1);
+}
+
+.sol-codex-inline-icon {
+  width: 14px;
+  height: 14px;
+  display: block;
+  flex: 0 0 auto;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  fill: none;
+  transition: transform 180ms cubic-bezier(.2,.8,.2,1), opacity 180ms ease;
+}
+
+.sol-codex-inline-btn[data-state="ready"]:hover .sol-codex-inline-label,
+.sol-codex-inline-btn[data-state="error"]:hover .sol-codex-inline-label {
+  transform: translateX(-1px);
+}
+
+.sol-codex-inline-btn[data-state="ready"]:hover .sol-codex-inline-icon,
+.sol-codex-inline-btn[data-state="error"]:hover .sol-codex-inline-icon {
+  transform: translateX(3px);
+}
+
+.sol-codex-inline-btn[data-state="sending"] {
+  opacity: 0.62;
+}
+
+.sol-codex-inline-btn[data-state="sending"] .sol-codex-inline-icon {
+  animation: sol-codex-pulse 900ms ease-in-out infinite;
+}
+
+.sol-codex-inline-btn[data-state="running"] {
+  opacity: 0.78;
+}
+
+.sol-codex-inline-loader {
+  display: grid;
+  grid-template-columns: repeat(3, 3px);
+  gap: 1px;
+  flex: 0 0 auto;
+}
+
+.sol-codex-inline-loader i {
+  width: 3px;
+  height: 3px;
+  border-radius: 1px;
+  background: currentColor;
+  opacity: .16;
+  animation: sol-codex-pixel-on .65s ease-in-out infinite;
+}
+
+.sol-codex-inline-loader i:nth-child(1),
+.sol-codex-inline-loader i:nth-child(5),
+.sol-codex-inline-loader i:nth-child(7) { animation-delay: 90ms; }
+.sol-codex-inline-loader i:nth-child(2),
+.sol-codex-inline-loader i:nth-child(6),
+.sol-codex-inline-loader i:nth-child(8) { animation-delay: 180ms; }
+.sol-codex-inline-loader i:nth-child(3),
+.sol-codex-inline-loader i:nth-child(9) { animation-delay: 270ms; }
+.sol-codex-inline-loader i:nth-child(4) { animation-delay: 0ms; }
+
+.sol-codex-inline-elapsed {
+  font: 11px ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-variant-numeric: tabular-nums;
+  opacity: .58;
+}
+
+.sol-codex-inline-btn[data-state="sent"] {
+  opacity: 0.92;
+  border-color: rgba(18, 183, 106, 0.24);
+  background: rgba(18, 183, 106, 0.055);
+}
+
+.sol-codex-inline-btn[data-state="error"] {
+  opacity: 0.92;
+  border-color: rgba(217, 45, 32, 0.22);
+  background: rgba(217, 45, 32, 0.045);
+}
+
+@keyframes sol-codex-pulse {
+  0%, 100% { opacity: 0.35; transform: translateX(0); }
+  50% { opacity: 0.95; transform: translateX(2px); }
+}
+
+@keyframes sol-codex-pixel-on {
+  0%, 100% { opacity: .16; transform: scale(.8); }
+  45% { opacity: 1; transform: scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sol-codex-inline-btn,
+  .sol-codex-inline-label,
+  .sol-codex-inline-icon,
+  .sol-codex-inline-loader i {
+    transition: none !important;
+    animation: none !important;
+  }
+}

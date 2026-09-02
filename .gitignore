@@ -1,0 +1,17 @@
+# Runtime state and secrets
+token
+config.json
+session-index.json
+*.log
+*.pid
+*.sqlite
+*.sqlite-*
+.env
+.env.*
+*.pem
+*.key
+
+# Generated and platform files
+node_modules/
+.DS_Store
+Sol Codex Bridge.app/

@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sol → Codex</title>
+  <link rel="stylesheet" href="sidepanel.css" />
+</head>
+<body>
+  <main class="app">
+    <header class="topbar">
+      <div>
+        <div class="eyebrow">LOCAL HANDOFF</div>
+        <h1>Sol → Codex</h1>
+      </div>
+      <button id="refreshAll" class="icon-btn" title="刷新最新索引">↻</button>
+    </header>
+
+    <section class="status-row">
+      <span id="bridgeDot" class="dot"></span>
+      <span id="bridgeText">读取本地缓存…</span>
+    </section>
+
+    <section id="pairCard" class="card hidden">
+      <div class="section-title">首次配对</div>
+      <p class="hint">运行 install-bridge.command 后，配对码已复制到剪贴板。粘贴一次即可。</p>
+      <div class="inline">
+        <input id="tokenInput" type="password" autocomplete="off" placeholder="粘贴 Pairing Token" />
+        <button id="saveToken" class="btn small">连接</button>
+      </div>
+      <div id="pairError" class="error"></div>
+    </section>
+
+    <section class="card">
+      <div class="section-head">
+        <div class="section-title">当前方案</div>
+        <button id="captureContext" class="text-btn">重新读取</button>
+      </div>
+      <div id="sourceState" class="source-state neutral">
+        <div class="source-main">
+          <strong id="sourceVersion">等待 ChatGPT 方案</strong>
+          <span id="sourceLive" class="source-live"></span>
+        </div>
+        <div id="sourceSent" class="source-sub">插件会自动跟踪当前 ChatGPT 最新回复</div>
+      </div>
+      <div id="contextMeta" class="meta">等待读取 ChatGPT 内容</div>
+      <textarea id="prompt" rows="8" placeholder="这里会自动读取当前 ChatGPT / Sol 的最新回复。也可以手动修改。"></textarea>
+    </section>
+
+    <section class="card">
+      <div class="section-head">
+        <div class="section-title">本地项目</div>
+        <button id="toggleAddProject" class="text-btn">+ 添加</button>
+      </div>
+      <select id="projectSelect"></select>
+      <div id="projectPath" class="path"></div>
+      <div id="addProjectBox" class="inline add-project hidden">
+        <input id="projectPathInput" type="text" placeholder="/Users/me/Projects/agent-workbench" />
+        <button id="addProject" class="btn small">保存</button>
+      </div>
+      <div id="projectError" class="error"></div>
+    </section>
+
+    <section class="card">
+      <div class="section-title">发送方式</div>
+      <div class="segmented" role="radiogroup">
+        <button data-mode="new" class="mode active">项目新任务</button>
+        <button data-mode="queue" class="mode">已有会话</button>
+      </div>
+      <p id="modeHint" class="hint">在所选本地项目中自动启动一条新的 Codex 任务。</p>
+
+      <div id="sessionBlock" class="hidden">
+        <div class="session-label-row">
+          <label for="sessionSelect">本项目会话</label>
+          <span id="sessionSync" class="sync-note"></span>
+        </div>
+        <select id="sessionSelect"></select>
+        <div id="sessionMeta" class="meta"></div>
+      </div>
+    </section>
+
+    <section class="card compact">
+      <label class="check-row">
+        <input id="openApp" type="checkbox" checked />
+        <span>发送后切换到 Codex（已有会话会打开目标会话）</span>
+      </label>
+    </section>
+
+    <div id="actionError" class="error action-error"></div>
+    <button id="send" class="btn primary"><span id="sendLoader" class="pixel-loader hidden" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span id="sendLabel">发送到 Codex</span><span id="sendElapsed" class="send-elapsed hidden"></span></button>
+
+    <div id="toast" class="toast hidden"></div>
+  </main>
+  <script src="sidepanel.js"></script>
+</body>
+</html>

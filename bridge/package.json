@@ -1,0 +1,13 @@
+{
+  "name": "sol-codex-local-bridge",
+  "version": "0.2.10",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node server.mjs",
+    "self-test": "node test-self.mjs"
+  }
+}

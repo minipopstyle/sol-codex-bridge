@@ -1,0 +1,41 @@
+{
+  "manifest_version": 3,
+  "name": "Sol → Codex Local Bridge",
+  "version": "0.2.10",
+  "description": "Send the latest ChatGPT plan to the configured local Codex project/session, with one-click inline handoff.",
+  "permissions": [
+    "activeTab",
+    "storage",
+    "sidePanel"
+  ],
+  "host_permissions": [
+    "https://chatgpt.com/*",
+    "https://*.chatgpt.com/*",
+    "http://127.0.0.1:37821/*",
+    "http://localhost:37821/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://chatgpt.com/*",
+        "https://*.chatgpt.com/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle",
+      "css": [
+        "content.css"
+      ]
+    }
+  ],
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "action": {
+    "default_title": "Sol → Codex"
+  }
+}
