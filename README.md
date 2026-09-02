@@ -160,7 +160,7 @@ Local Bridge 负责中间的 **Handoff**。
 install-bridge.command
 ```
 
-安装完成后会生成一个 **Pairing Token**，请复制保存。
+安装完成后会生成一个 **Pairing Token**，并自动复制到剪贴板。
 
 ### 2. 安装 Chrome 扩展
 
@@ -180,9 +180,15 @@ chrome://extensions
 
 打开扩展侧栏。
 
-粘贴安装 Bridge 时生成的 **Pairing Token**。
+安装脚本复制的 **Pairing Token** 会自动粘贴。安装和连接期间，请不要复制其他文字，否则会覆盖配对码。
 
 连接成功后即可读取本机 Codex 项目和会话。
+
+### 4. 刷新 ChatGPT 和插件
+
+首次安装扩展后，请刷新 ChatGPT 网页，并重新打开或刷新扩展侧栏。
+
+当会话右下角出现 `Codex →` 按钮，表示页面数据已刷新成功。
 
 ---
 
