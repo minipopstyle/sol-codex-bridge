@@ -1,5 +1,7 @@
 # Sol → Codex Local Bridge
 
+![Sol → Codex Local Bridge cover](assets/cover.png)
+
 一个仅限 macOS 的 Chrome 扩展与本地 Bridge：把 ChatGPT 当前回复发送到本机 Codex 项目或已有会话。
 
 ## 功能
