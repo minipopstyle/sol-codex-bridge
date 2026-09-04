@@ -10,6 +10,10 @@
   Think in ChatGPT. Build in Codex.
 </p>
 
+<p align="center">
+  <a href="README.md">中文</a> · <a href="README.en.md">English</a>
+</p>
+
 ---
 
 ## Sol ↔ Codex 是什么？
