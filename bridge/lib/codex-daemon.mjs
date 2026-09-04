@@ -269,7 +269,7 @@ export async function queueViaLocalDaemon(sessionId, prompt) {
       clientInfo: {
         name: "sol_codex_bridge",
         title: "Sol Codex Local Bridge",
-        version: "0.2.10"
+        version: "0.2.11"
       },
       capabilities: { experimentalApi: true }
     });

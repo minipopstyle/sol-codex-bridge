@@ -6,7 +6,7 @@ LABEL="com.sol-codex.local-bridge"
 DOMAIN="gui/$(id -u)"
 PORT=37821
 
-echo "=== Sol → Codex Bridge Diagnose v0.2.10 ==="
+echo "=== Sol → Codex Bridge Diagnose v0.2.11 ==="
 echo "date: $(date)"
 echo "macOS: $(sw_vers -productVersion 2>/dev/null || uname -a)"
 echo "node: $(command -v node 2>/dev/null) $(node --version 2>/dev/null)"

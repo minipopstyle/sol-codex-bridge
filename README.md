@@ -1,9 +1,9 @@
-# Sol → Codex Local Bridge
+# Sol ↔ Codex Local Bridge
 
-![Sol → Codex Local Bridge cover](assets/cover.png)
+![Sol ↔ Codex Local Bridge cover](assets/cover.png)
 
 <p align="center">
-  <strong>把 ChatGPT 的方案，无缝交给 Codex 本地执行。</strong>
+  <strong>让 ChatGPT 与 Codex 在本地安全交换上下文。</strong>
 </p>
 
 <p align="center">
@@ -12,20 +12,20 @@
 
 ---
 
-## Sol → Codex 是什么？
+## Sol ↔ Codex 是什么？
 
-**Sol → Codex Local Bridge** 是一个仅限 macOS 的 Chrome 扩展 + 本地 Bridge。
+**Sol ↔ Codex Local Bridge** 是一个仅限 macOS 的 Chrome 扩展 + 本地 Bridge，提供两个一级方向：Sol → Codex 发送方案，以及 Codex → Sol 读取本地 Context。
 
 它解决的是 ChatGPT 与 Codex 之间最后一段「上下文交接」：
 
 ```text
 ChatGPT
-  ↓
-Local Bridge
-  ↓
-Codex App
-  ↓
-本地项目 / 已有会话
+    ↕
+Chrome Extension
+    ↕
+127.0.0.1 Local Bridge
+    ↕
+Codex Session / Project Files / Git
 ```
 
 你可以在 ChatGPT 中完成需求分析、方案设计和任务拆解，然后直接把当前回复发送到本机 Codex。
@@ -38,6 +38,10 @@ Codex App
 
 ## ✨ 核心功能
 
+### 🌐 中 / EN 双语界面
+
+侧栏和 ChatGPT 页面内联操作支持中文 / English 即时切换，并记住你的语言选择。
+
 ### 🔗 ChatGPT → Codex 一键发送
 
 直接读取：
@@ -46,6 +50,23 @@ Codex App
 - 当前选中的文本
 
 并发送给本机 Codex。
+
+### Codex → Sol 读取内容
+
+最新 Assistant 回复旁会同时出现：
+
+```text
+← Sol        Codex →
+```
+
+点击 `← Sol` 后，可从当前已选项目和会话读取：
+
+- 最近进度 Snapshot
+- Session transcript
+- Git Diff
+- 项目文件只读浏览与文本预览
+
+默认读取“最近进度”。读取内容需要用户操作，并只提供“插入 ChatGPT”，不会自动发送 ChatGPT 消息。
 
 ### 📁 本地项目
 
@@ -61,11 +82,11 @@ Bridge 会读取本机 Codex 状态，并显示可用项目。
 
 新的分析、修改方案或补充需求可以继续追加到原来的 Session 中，保持上下文连续。
 
-### ⚡ 页面内联发送
+### ⚡ 页面内联发送与读取
 
 ChatGPT 最新回复旁会出现：
 
-`Codex →`
+`← Sol    Codex →`
 
 即使侧栏已经收起，也可以直接发送。
 
@@ -122,15 +143,15 @@ ChatGPT 最新回复旁会出现：
         ↓
 ② 得到实施方案
         ↓
-③ Sol → Codex 读取当前回复
+③ 在 Side Panel 选择方向并读取当前回复
         ↓
 ④ 选择本地项目
         ↓
 ⑤ 选择「项目新任务」或「已有会话」
         ↓
-⑥ 发送到 Codex
+⑥ Sol → Codex 发送，或 Codex → Sol 读取 Context
         ↓
-⑦ Codex 在本地继续执行
+⑦ 检查后手动发送 ChatGPT
 ```
 
 ChatGPT 负责 **Think / Plan**。
@@ -138,6 +159,8 @@ ChatGPT 负责 **Think / Plan**。
 Codex 负责 **Build / Run**。
 
 Local Bridge 负责中间的 **Handoff**。
+
+读取内容是显式、只读的用户操作；Bridge 不会主动上传本地代码。
 
 ---
 
@@ -188,7 +211,7 @@ chrome://extensions
 
 首次安装扩展后，请刷新 ChatGPT 网页，并重新打开或刷新扩展侧栏。
 
-当会话右下角出现 `Codex →` 按钮，表示页面数据已刷新成功。
+当会话右下角出现 `← Sol    Codex →` 按钮，表示页面数据已刷新成功。
 
 ---
 
@@ -196,7 +219,7 @@ chrome://extensions
 
 ### 创建新的 Codex 任务
 
-1. 在 ChatGPT 打开 Sol → Codex 侧栏
+1. 在 ChatGPT 打开 Sol ↔ Codex 侧栏
 2. 选择本地项目
 3. 选择 **项目新任务**
 4. 点击 **发送到 Codex**
@@ -221,10 +244,21 @@ Bridge 会把当前 ChatGPT 内容追加到这个会话，而不是重新创建�
 直接点击 ChatGPT 回复旁的：
 
 ```text
-Codex →
+← Sol    Codex →
 ```
 
 即可使用之前保存的项目和发送方式快速发送。
+
+### Codex → Sol：读取 Context
+
+1. 在侧栏切换到 **Codex → Sol**
+2. 选择项目和 Codex 会话；若未选择，会优先使用活跃/使用中的最新会话
+3. 首次读取时点击“允许读取”
+4. 选择“最近进度”“会话记录”“Git Diff”或“项目文件”
+5. 检查 Context Preview 后点击“插入 ChatGPT”
+6. 回到 ChatGPT，确认内容后由用户手动点击 Send
+
+“项目被选择”不等于“允许读取”。关闭读取权限后，Bridge 会对 Context API 返回 `403`。
 
 ---
 
@@ -248,6 +282,12 @@ Bridge 仅监听：
 
 Token 用于防止其他网页或本机程序未经授权调用 Bridge。
 
+### Context Read Permission
+
+读取项目代码、Git 信息和 Session Context 前，必须针对项目显式授权。授权保存为 `readAllowedProjects` 的 normalized realpath；撤销后服务端会拒绝读取，而不仅是隐藏 UI。
+
+Workspace Guard 会拒绝项目外路径、symlink escape、`.env`、密钥、`.git`、`node_modules`、构建产物和二进制文件。项目文件 API 只接受 `projectPath + relativePath`，不接受任意 `sourcePath`。
+
 ### 本地数据
 
 以下数据存储在：
@@ -262,6 +302,8 @@ Token 用于防止其他网页或本机程序未经授权调用 Bridge。
 - Bridge 日志
 - 项目配置
 - Codex 会话缓存
+- Context 读取授权
+- 不含完整 prompt 的 Handoff ledger
 
 这些数据不属于 Git 仓库，也不会随项目提交。
 
@@ -289,7 +331,13 @@ Bridge 不会主动把任务内容发送到额外的第三方服务。
 sol-codex-bridge/
 │
 ├── extension/               # Chrome 扩展
-├── bridge/                  # 本地 Bridge 服务
+├── bridge/                  # 本地 Bridge 服务与只读 Context API
+│   └── lib/
+│       ├── workspace-guard.mjs
+│       ├── codex-transcript.mjs
+│       ├── project-context.mjs
+│       ├── context-bundle.mjs
+│       └── handoff-ledger.mjs
 ├── install-bridge.command   # macOS 安装脚本
 ├── assets/                  # README / 项目图片
 └── README.md
@@ -306,28 +354,24 @@ cd bridge
 npm run self-test
 ```
 
-安装或更新扩展后，建议分别测试“项目新任务”和“已有会话”，确保 ChatGPT → Bridge → Codex 整条链路工作正常。
+安装或更新扩展后，建议分别测试两个方向、项目/会话保持、`← Sol` Quick Pull 和 `Codex →` 发送链路，确保 ChatGPT ↔ Bridge ↔ Codex 整条链路工作正常。
 
 ---
 
 ## 当前定位
 
-Sol → Codex 并不是另一个 Coding Agent。
+Sol ↔ Codex 并不是另一个 Coding Agent。
 
 它只负责解决一个问题：
 
-> **让 ChatGPT 的推理与规划能力，能够自然地交给 Codex 的本地执行环境。**
+> **让 ChatGPT 的规划与 Codex 的本地执行环境，在用户确认下交换上下文。**
 
 ```text
 ChatGPT / Sol
-      ↓
-  Think & Plan
-      ↓
- Local Handoff
-      ↓
-     Codex
-      ↓
- Build & Execute
+      ↕
+  Local Context Bridge
+      ↕
+Codex Session / Project / Git
 ```
 
 ---

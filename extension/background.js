@@ -1,5 +1,14 @@
+importScripts("i18n.js");
+
+const i18n = globalThis.SolCodexI18n;
+const t = (...args) => i18n.t(...args);
 const BRIDGE = "http://127.0.0.1:37821";
 const REQUEST_TIMEOUT_MS = 1800;
+
+const localeReady = i18n.loadLocale();
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === "local" && changes.uiLanguage) i18n.setLocale(changes.uiLanguage.newValue);
+});
 
 async function setPanelBehavior() {
   if (chrome.sidePanel?.setPanelBehavior) {
@@ -26,13 +35,14 @@ async function bridgeFetch(path, options = {}, needsAuth = true) {
     let data = {};
     try { data = await response.json(); } catch {}
     if (!response.ok) {
-      const error = new Error(data.error || `Bridge ${response.status}`);
+      const error = new Error(data.error || t("error.bridgeStatus", { status: response.status }));
       error.status = response.status;
+      error.code = data.code || null;
       throw error;
     }
     return data;
   } catch (error) {
-    if (error?.name === "AbortError") throw new Error("Bridge 响应超时");
+    if (error?.name === "AbortError") throw new Error(t("error.bridgeTimeout"));
     throw error;
   } finally {
     clearTimeout(timeout);
@@ -181,7 +191,7 @@ async function getQuickTarget() {
   ]);
   const projectPath = String(saved.selectedProject || "");
   const mode = saved.mode === "queue" ? "queue" : "new";
-  const sessionId = mode === "new" ? "" : String(saved.selectedSessionByProject?.[projectPath] || "");
+  const sessionId = String(saved.selectedSessionByProject?.[projectPath] || "");
   const project = saved.projectCache?.projects?.find?.((item) => item.path === projectPath) || null;
   const session = saved.sessionCacheByProject?.[projectPath]?.sessions?.find?.((item) => item.id === sessionId) || null;
   const ready = Boolean(saved.bridgeToken && projectPath && (mode === "new" || sessionId));
@@ -193,17 +203,29 @@ async function getQuickTarget() {
     sessionId: sessionId || null,
     sessionTitle: session?.title || null,
     openApp: saved.openApp !== false,
-    reason: ready ? "" : !saved.bridgeToken ? "Bridge 尚未配对" : !projectPath ? "尚未选择项目" : "尚未选择目标会话"
+    reason: ready ? "" : !saved.bridgeToken ? t("error.bridgeNotPaired") : !projectPath ? t("error.noProject") : t("error.noSession")
+  };
+}
+
+async function getSelectedProject() {
+  const saved = await chrome.storage.local.get(["selectedProject", "projectCache"]);
+  const path = String(saved.selectedProject || "");
+  const project = saved.projectCache?.projects?.find?.((item) => item.path === path) || null;
+  return {
+    ready: Boolean(path),
+    path,
+    name: project?.name || (path ? path.split(/[\\/]/).filter(Boolean).pop() : ""),
+    project
   };
 }
 
 async function quickSend(raw, sender) {
   const source = await handleSourceUpdate(raw, sender);
-  if (!source?.text) throw new Error("没有读取到 ChatGPT 最新方案");
-  if (source.pending || source.isStreaming) throw new Error("当前回复仍在生成，请生成完成后再发送");
+  if (!source?.text) throw new Error(t("error.noLatestReply"));
+  if (source.pending || source.isStreaming) throw new Error(t("error.replyGenerating"));
 
   const target = await getQuickTarget();
-  if (!target.ready) throw new Error(target.reason || "请先在 Sol → Codex 侧栏完成目标配置");
+  if (!target.ready) throw new Error(target.reason || t("error.noProjectSession"));
 
   const data = await bridgeFetch("/api/actions/send", {
     method: "POST",
@@ -224,16 +246,66 @@ async function quickSend(raw, sender) {
   return { data, source, lastSent, target };
 }
 
+async function contextRequest(message) {
+  const projectPath = String(message.projectPath || "");
+  const sessionId = String(message.sessionId || "");
+  const query = (values) => new URLSearchParams(values).toString();
+  switch (message.type) {
+    case "SOL_CODEX_CONTEXT_PERMISSION":
+      return message.allowed === true || message.allowed === false
+        ? bridgeFetch("/api/context/permission", { method: "POST", body: JSON.stringify({ projectPath, allowed: message.allowed }) })
+        : bridgeFetch(`/api/context/permission?${query({ project: projectPath })}`);
+    case "SOL_CODEX_CONTEXT_SNAPSHOT":
+      return bridgeFetch(`/api/context/snapshot?${query({ project: projectPath, sessionId })}`);
+    case "SOL_CODEX_CONTEXT_SESSION":
+      return bridgeFetch(`/api/context/session?${query({ project: projectPath, sessionId, direction: message.direction || "tail", cursor: message.cursor || "", maxMessages: message.maxMessages || 60 })}`);
+    case "SOL_CODEX_CONTEXT_GIT":
+      return bridgeFetch(`/api/context/git?${query({ project: projectPath })}`);
+    case "SOL_CODEX_LIST_PROJECT_FILES":
+      return bridgeFetch(`/api/project-files?${query({ project: projectPath, path: message.path || "" })}`);
+    case "SOL_CODEX_READ_PROJECT_FILE":
+      return bridgeFetch(`/api/project-file?${query({ project: projectPath, path: message.path || "" })}`);
+    case "SOL_CODEX_READ_PROJECT_FILE_DATA":
+      return bridgeFetch("/api/project-file-data?" + query({ project: projectPath, path: message.path || "" }));
+    case "SOL_CODEX_CONTEXT_SEARCH":
+      return bridgeFetch("/api/context/search", { method: "POST", body: JSON.stringify({ projectPath, query: message.query || "", maxResults: message.maxResults || 50 }) });
+    case "SOL_CODEX_CONTEXT_FILE":
+      return bridgeFetch("/api/context/file", { method: "POST", body: JSON.stringify({
+        projectPath,
+        relativePath: message.relativePath || "",
+        startLine: message.startLine || 1,
+        endLine: message.endLine || null
+      }) });
+    case "SOL_CODEX_CONTEXT_BUNDLE":
+      return bridgeFetch("/api/context/bundle", { method: "POST", body: JSON.stringify({
+        projectPath,
+        sessionId,
+        parts: message.parts,
+        options: message.options || {}
+      }) });
+    default:
+      throw new Error(t("error.unknownContext"));
+  }
+}
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   const knownTypes = new Set([
     "SOL_CODEX_SOURCE_UPDATE", "SOL_CODEX_GET_SOURCE_STATE", "SOL_CODEX_MARK_SENT",
     "SOL_CODEX_GET_CACHED_STATE", "SOL_CODEX_HEALTH", "SOL_CODEX_LOAD_PROJECTS",
     "SOL_CODEX_LOAD_SESSIONS", "SOL_CODEX_BRIDGE_REQUEST",
-    "SOL_CODEX_GET_QUICK_TARGET", "SOL_CODEX_QUICK_SEND"
+    "SOL_CODEX_GET_QUICK_TARGET", "SOL_CODEX_QUICK_SEND",
+    "SOL_CODEX_GET_SELECTED_PROJECT",
+    "SOL_CODEX_OPEN_SIDE_PANEL",
+    "SOL_CODEX_CONTEXT_PERMISSION", "SOL_CODEX_CONTEXT_SNAPSHOT",
+    "SOL_CODEX_CONTEXT_SESSION", "SOL_CODEX_CONTEXT_GIT",
+    "SOL_CODEX_CONTEXT_SEARCH", "SOL_CODEX_CONTEXT_FILE",
+    "SOL_CODEX_CONTEXT_BUNDLE", "SOL_CODEX_LIST_PROJECT_FILES",
+    "SOL_CODEX_READ_PROJECT_FILE", "SOL_CODEX_READ_PROJECT_FILE_DATA"
   ]);
   if (!knownTypes.has(message?.type)) return false;
 
   const run = async () => {
+    await localeReady;
     switch (message?.type) {
       case "SOL_CODEX_SOURCE_UPDATE":
         return { ok: true, source: await handleSourceUpdate(message.source, sender) };
@@ -251,8 +323,25 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return { ok: true, data: await loadSessions(String(message.projectPath || "")) };
       case "SOL_CODEX_GET_QUICK_TARGET":
         return { ok: true, target: await getQuickTarget() };
+      case "SOL_CODEX_GET_SELECTED_PROJECT":
+        return { ok: true, project: await getSelectedProject() };
       case "SOL_CODEX_QUICK_SEND":
         return { ok: true, ...(await quickSend(message.source, sender)) };
+      case "SOL_CODEX_OPEN_SIDE_PANEL":
+        if (!chrome.sidePanel?.open || sender?.tab?.windowId == null) throw new Error(t("error.sidePanel"));
+        await chrome.sidePanel.open({ windowId: sender.tab.windowId });
+        return { ok: true };
+      case "SOL_CODEX_CONTEXT_PERMISSION":
+      case "SOL_CODEX_CONTEXT_SNAPSHOT":
+      case "SOL_CODEX_CONTEXT_SESSION":
+      case "SOL_CODEX_CONTEXT_GIT":
+      case "SOL_CODEX_LIST_PROJECT_FILES":
+      case "SOL_CODEX_READ_PROJECT_FILE":
+      case "SOL_CODEX_READ_PROJECT_FILE_DATA":
+      case "SOL_CODEX_CONTEXT_SEARCH":
+      case "SOL_CODEX_CONTEXT_FILE":
+      case "SOL_CODEX_CONTEXT_BUNDLE":
+        return { ok: true, data: await contextRequest(message) };
       case "SOL_CODEX_BRIDGE_REQUEST":
         return {
           ok: true,
@@ -266,7 +355,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   run().then((result) => {
     if (result != null) sendResponse(result);
   }).catch((error) => {
-    sendResponse({ ok: false, error: error.message || String(error), status: error.status || null });
+    sendResponse({ ok: false, error: error.message || String(error), status: error.status || null, code: error.code || null });
   });
   return true;
 });

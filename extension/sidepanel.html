@@ -3,94 +3,179 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Sol → Codex</title>
+  <title data-i18n="app.title">Sol ↔ Codex</title>
   <link rel="stylesheet" href="sidepanel.css" />
 </head>
 <body>
   <main class="app">
     <header class="topbar">
       <div>
-        <div class="eyebrow">LOCAL HANDOFF</div>
-        <h1>Sol → Codex</h1>
+        <div class="eyebrow" data-i18n="app.eyebrow">LOCAL CONTEXT BRIDGE</div>
+        <h1>Sol ↔ Codex</h1>
       </div>
-      <button id="refreshAll" class="icon-btn" title="刷新最新索引">↻</button>
+      <div class="topbar-actions">
+        <div class="language-switch" role="group" aria-label="语言" data-i18n-aria-label="common.language">
+          <button type="button" data-locale="zh-CN" aria-pressed="true" title="中文" data-i18n-title="common.chinese">中</button>
+          <button type="button" data-locale="en" aria-pressed="false" title="English" data-i18n-title="common.english">EN</button>
+        </div>
+        <button id="refreshAll" class="icon-btn" title="刷新最新索引" data-i18n-title="common.refresh">↻</button>
+      </div>
     </header>
 
     <section class="status-row">
       <span id="bridgeDot" class="dot"></span>
-      <span id="bridgeText">读取本地缓存…</span>
+      <span id="bridgeText" data-i18n="common.loading">加载中…</span>
     </section>
 
+    <nav class="direction-switch" role="tablist" aria-label="Bridge direction" data-i18n-aria-label="nav.bridgeDirection">
+      <button type="button" class="direction-option active" data-direction="push" role="tab" aria-selected="true" data-i18n="nav.solToCodex">Sol → Codex</button>
+      <button type="button" class="direction-option" data-direction="pull" role="tab" aria-selected="false" data-i18n="nav.codexToSol">Codex → Sol</button>
+    </nav>
+
     <section id="pairCard" class="card hidden">
-      <div class="section-title">首次配对</div>
-      <p class="hint">运行 install-bridge.command 后，配对码已复制到剪贴板。粘贴一次即可。</p>
+      <div class="section-title" data-i18n="pair.title">首次配对</div>
+      <p class="hint" data-i18n="pair.description">运行 install-bridge.command 后，配对码已复制到剪贴板。粘贴一次即可。</p>
       <div class="inline">
-        <input id="tokenInput" type="password" autocomplete="off" placeholder="粘贴 Pairing Token" />
-        <button id="saveToken" class="btn small">连接</button>
+        <input id="tokenInput" type="password" autocomplete="off" placeholder="粘贴 Pairing Token" data-i18n-placeholder="pair.placeholder" />
+        <button id="saveToken" class="btn small" data-i18n="pair.connect">连接</button>
       </div>
       <div id="pairError" class="error"></div>
     </section>
 
     <section class="card">
       <div class="section-head">
-        <div class="section-title">当前方案</div>
-        <button id="captureContext" class="text-btn">重新读取</button>
-      </div>
-      <div id="sourceState" class="source-state neutral">
-        <div class="source-main">
-          <strong id="sourceVersion">等待 ChatGPT 方案</strong>
-          <span id="sourceLive" class="source-live"></span>
-        </div>
-        <div id="sourceSent" class="source-sub">插件会自动跟踪当前 ChatGPT 最新回复</div>
-      </div>
-      <div id="contextMeta" class="meta">等待读取 ChatGPT 内容</div>
-      <textarea id="prompt" rows="8" placeholder="这里会自动读取当前 ChatGPT / Sol 的最新回复。也可以手动修改。"></textarea>
-    </section>
-
-    <section class="card">
-      <div class="section-head">
-        <div class="section-title">本地项目</div>
-        <button id="toggleAddProject" class="text-btn">+ 添加</button>
+        <div class="section-title" data-i18n="project.title">本地项目</div>
+        <button id="toggleAddProject" class="text-btn" data-i18n="project.add">+ 添加</button>
       </div>
       <select id="projectSelect"></select>
       <div id="projectPath" class="path"></div>
       <div id="addProjectBox" class="inline add-project hidden">
-        <input id="projectPathInput" type="text" placeholder="/Users/me/Projects/agent-workbench" />
-        <button id="addProject" class="btn small">保存</button>
+        <input id="projectPathInput" type="text" placeholder="/Users/me/Projects/agent-workbench" data-i18n-placeholder="project.pathPlaceholder" />
+        <button id="addProject" class="btn small" data-i18n="common.save">保存</button>
       </div>
       <div id="projectError" class="error"></div>
     </section>
 
-    <section class="card">
-      <div class="section-title">发送方式</div>
-      <div class="segmented" role="radiogroup">
-        <button data-mode="new" class="mode active">项目新任务</button>
-        <button data-mode="queue" class="mode">已有会话</button>
+    <section id="sessionCard" class="card session-card hidden">
+      <div class="section-head">
+        <div id="sessionCardTitle" class="section-title" data-i18n="session.title">Codex 会话</div>
+        <span id="sessionSync" class="sync-note"></span>
       </div>
-      <p id="modeHint" class="hint">在所选本地项目中自动启动一条新的 Codex 任务。</p>
+      <select id="sessionSelect"></select>
+      <div id="sessionMeta" class="meta"></div>
+    </section>
 
-      <div id="sessionBlock" class="hidden">
-        <div class="session-label-row">
-          <label for="sessionSelect">本项目会话</label>
-          <span id="sessionSync" class="sync-note"></span>
+    <section id="pushView" class="direction-view push-view">
+      <section class="card">
+        <div class="section-head">
+          <div class="section-title" data-i18n="plan.title">当前方案</div>
+          <button id="captureContext" class="text-btn" data-i18n="plan.reload">重新读取</button>
         </div>
-        <select id="sessionSelect"></select>
-        <div id="sessionMeta" class="meta"></div>
-      </div>
+        <div id="sourceState" class="source-state neutral">
+          <div class="source-main">
+            <strong id="sourceVersion" data-i18n="plan.waiting">等待 ChatGPT 方案</strong>
+            <span id="sourceLive" class="source-live"></span>
+          </div>
+          <div id="sourceSent" class="source-sub" data-i18n="plan.following">插件会自动跟踪当前 ChatGPT 最新回复</div>
+        </div>
+        <div id="contextMeta" class="meta" data-i18n="common.loading">加载中…</div>
+        <textarea id="prompt" rows="6" placeholder="这里会自动读取当前 ChatGPT / Sol 的最新回复。也可以手动修改。" data-i18n-placeholder="plan.promptPlaceholder"></textarea>
+      </section>
+
+      <section class="card">
+        <div class="section-title" data-i18n="send.title">发送方式</div>
+        <div class="segmented" role="radiogroup">
+          <button data-mode="new" class="mode active" data-i18n="send.newTask">项目新任务</button>
+          <button data-mode="queue" class="mode" data-i18n="send.existingSession">已有会话</button>
+        </div>
+        <p id="modeHint" class="hint" data-i18n="send.newHint">在所选本地项目中自动启动一条新的 Codex 任务。</p>
+      </section>
+
+      <section class="card compact">
+        <label class="check-row">
+          <input id="openApp" type="checkbox" checked />
+          <span data-i18n="send.openCodex">发送后切换到 Codex（已有会话会打开目标会话）</span>
+        </label>
+      </section>
+
+      <div id="actionError" class="error action-error"></div>
+      <button id="send" class="btn primary"><span id="sendLoader" class="pixel-loader hidden" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span id="sendLabel" data-i18n="send.toCodex">发送到 Codex</span><span id="sendElapsed" class="send-elapsed hidden"></span></button>
     </section>
 
-    <section class="card compact">
-      <label class="check-row">
-        <input id="openApp" type="checkbox" checked />
-        <span>发送后切换到 Codex（已有会话会打开目标会话）</span>
-      </label>
+    <section id="pullView" class="direction-view pull-view hidden">
+      <section class="card" id="contextCard">
+        <div class="section-head">
+          <div class="section-title" data-i18n="context.title">读取内容</div>
+          <div class="permission-status">
+            <span id="contextPermission" class="sync-note" data-i18n="context.permissionNotChecked">未检查</span>
+            <button id="contextManage" class="text-btn hidden" data-i18n="common.manage">管理</button>
+          </div>
+        </div>
+        <div id="contextTargetMeta" class="meta" data-i18n="context.chooseProjectSession">选择项目和已有会话后读取</div>
+        <div id="contextPermissionMenu" class="permission-menu hidden">
+          <div class="permission-title" data-i18n="context.permissionTitle">当前项目 Context 权限</div>
+          <div class="permission-list"><span class="permission-check">✓</span> <span data-i18n="context.permissionSession">Session</span></div>
+          <div class="permission-list"><span class="permission-check">✓</span> <span data-i18n="context.permissionGit">Git</span></div>
+          <div class="permission-list"><span class="permission-check">✓</span> <span data-i18n="context.permissionFiles">Project Files</span></div>
+          <button id="disableContext" class="text-btn danger-text" data-i18n="context.disablePermission">关闭读取权限</button>
+        </div>
+        <div class="context-tabs" role="tablist">
+          <button data-context-part="snapshot" class="context-tab active" role="tab" data-i18n="context.tabs.snapshot">最近进度</button>
+          <button data-context-part="transcript" class="context-tab" role="tab" data-i18n="context.tabs.transcript">会话记录</button>
+          <button data-context-part="git" class="context-tab" role="tab" data-i18n="context.tabs.git">Git Diff</button>
+          <button data-context-part="files" class="context-tab" role="tab" data-i18n="context.tabs.files">项目文件</button>
+        </div>
+        <div id="contextPermissionBox" class="context-permission hidden">
+          <div data-i18n="context.permissionRequired">当前项目需要读取授权</div>
+          <div id="contextPermissionPath" class="path"></div>
+          <button id="allowContext" class="btn secondary" data-i18n="context.allow">允许读取</button>
+        </div>
+        <div id="standardContextView">
+          <div id="contextFileTools" class="hidden">
+            <div class="inline">
+              <input id="contextSearchInput" type="search" placeholder="搜索文件内容…" data-i18n-placeholder="context.searchPlaceholder" />
+              <button id="contextSearch" class="btn small secondary" data-i18n="common.search">搜索</button>
+            </div>
+            <div id="contextResults" class="context-results"></div>
+          </div>
+          <div class="context-preview">
+            <div class="context-preview-toolbar">
+              <span data-i18n="context.preview">Context Preview</span>
+              <span id="contextPreviewMeta" data-i18n="context.unread">未读取</span>
+            </div>
+            <pre id="contextPreviewContent" class="context-preview-content" data-i18n="context.emptyPreview">选择读取内容后显示</pre>
+          </div>
+          <button id="insertContext" class="btn primary" disabled data-i18n="context.insert">插入 ChatGPT</button>
+        </div>
+        <div id="projectFilesView" class="project-files-view hidden" aria-live="polite">
+          <div class="project-files-toolbar">
+            <div class="project-files-heading">
+              <div class="section-title" data-i18n="files.title">项目文件</div>
+              <div id="projectFilesProjectName" class="meta"></div>
+            </div>
+            <button id="projectFilesRefresh" class="icon-btn project-files-refresh" type="button" title="刷新项目文件" aria-label="刷新项目文件" data-i18n-title="files.refresh" data-i18n-aria-label="files.refresh">↻</button>
+          </div>
+          <div id="projectFilesTreeView" class="project-files-tree-view"></div>
+          <div id="projectFilePreviewView" class="project-file-preview-view hidden">
+            <div class="project-file-preview-toolbar">
+              <button id="projectFilesBack" class="text-btn" type="button" data-i18n="files.back">返回项目文件</button>
+              <button id="projectFileCopy" class="text-btn hidden" type="button" data-i18n="files.copy">复制</button>
+            </div>
+            <div id="projectFilePreviewMeta" class="meta"></div>
+            <pre id="projectFilePreviewContent" class="project-file-preview-content"></pre>
+            <img id="projectFilePreviewImage" class="project-file-preview-image hidden" alt="">
+            <div id="projectFilePreviewNotice" class="project-file-preview-notice"></div>
+            <button id="projectFileInsert" class="btn primary" disabled data-i18n="files.insertText">插入 ChatGPT</button>
+          </div>
+        </div>
+        <div id="contextError" class="error"></div>
+      </section>
     </section>
-
-    <div id="actionError" class="error action-error"></div>
-    <button id="send" class="btn primary"><span id="sendLoader" class="pixel-loader hidden" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span id="sendLabel">发送到 Codex</span><span id="sendElapsed" class="send-elapsed hidden"></span></button>
 
     <div id="toast" class="toast hidden"></div>
   </main>
+  <script src="i18n.js"></script>
+  <script src="project-files-client.js"></script>
   <script src="sidepanel.js"></script>
 </body>
 </html>

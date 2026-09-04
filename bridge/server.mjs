@@ -21,12 +21,23 @@ import {
   launchForkTask
 } from "./lib/codex-cli.mjs";
 import { findCodexDesktopApp } from "./lib/codex-desktop.mjs";
+import { buildContextBundle, buildSessionSnapshot } from "./lib/context-bundle.mjs";
+import { readTranscript } from "./lib/codex-transcript.mjs";
+import { getGitDiff, searchProject, readProjectFile } from "./lib/project-context.mjs";
+import { listProjectDirectory, readProjectFile as readProjectPreview, readProjectFileData } from "./lib/project-files.mjs";
+import { isReadAllowed, readPermission, setReadPermission } from "./lib/workspace-guard.mjs";
+import { appendHandoff } from "./lib/handoff-ledger.mjs";
 
 const HOST = "127.0.0.1";
 const PORT = Number(process.env.SOL_CODEX_BRIDGE_PORT || 37821);
 const TOKEN = getOrCreateToken();
 const startedAt = Date.now();
 const newTaskStates = new Map();
+
+function recordHandoff(source, projectPath, sessionId, transport) {
+  try { appendHandoff({ source, projectPath, sessionId, transport }); }
+  catch (error) { console.error(`[HandoffLedger] ${error?.message || error}`); }
+}
 
 // Heavy discovery happens once at process start, never inside /health or /sessions.
 const stateInit = initializeStateIndex();
@@ -78,7 +89,7 @@ async function handle(req, res) {
     return json(res, 200, {
       ok: true,
       authRequired: true,
-      bridgeVersion: "0.2.10",
+      bridgeVersion: "0.2.11",
       uptimeMs: Date.now() - startedAt,
       codex: codexSnapshot,
       desktop: { found: Boolean(desktopApp) },
@@ -117,6 +128,80 @@ async function handle(req, res) {
 
   if (req.method === "GET" && url.pathname === "/api/index-status") {
     return json(res, 200, getStateIndexInfo());
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/context/permission") {
+    const projectPath = url.searchParams.get("project") || "";
+    if (!projectPath) return json(res, 400, { error: "缺少 project" });
+    return json(res, 200, { ...readPermission(projectPath), allowed: isReadAllowed(projectPath) });
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/context/permission") {
+    const body = await readBody(req);
+    if (typeof body.allowed !== "boolean") return json(res, 400, { error: "allowed 必须是布尔值" });
+    return json(res, 200, setReadPermission(String(body.projectPath || ""), body.allowed));
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/context/snapshot") {
+    const projectPath = url.searchParams.get("project") || "";
+    const sessionId = url.searchParams.get("sessionId") || "";
+    if (!projectPath || !sessionId) return json(res, 400, { error: "缺少 project 或 sessionId" });
+    return json(res, 200, buildSessionSnapshot({ projectPath, sessionId }));
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/context/session") {
+    const projectPath = url.searchParams.get("project") || "";
+    const sessionId = url.searchParams.get("sessionId") || "";
+    if (!projectPath || !sessionId) return json(res, 400, { error: "缺少 project 或 sessionId" });
+    return json(res, 200, readTranscript({
+      projectPath,
+      sessionId,
+      direction: url.searchParams.get("direction") || "tail",
+      cursor: url.searchParams.get("cursor") || null,
+      maxMessages: url.searchParams.get("maxMessages") || 60,
+      maxTotalBytes: url.searchParams.get("maxTotalBytes") || 80_000,
+      maxToolOutputBytes: url.searchParams.get("maxToolOutputBytes") || 12_000,
+      excludeToolOutputs: url.searchParams.get("excludeToolOutputs") === "true"
+    }));
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/context/git") {
+    const projectPath = url.searchParams.get("project") || "";
+    if (!projectPath) return json(res, 400, { error: "缺少 project" });
+    return json(res, 200, getGitDiff(projectPath));
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/project-files") {
+    const projectPath = url.searchParams.get("project") || "";
+    if (!projectPath) return json(res, 400, { error: "缺少 project" });
+    return json(res, 200, listProjectDirectory(projectPath, url.searchParams.get("path") || ""));
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/project-file") {
+    const projectPath = url.searchParams.get("project") || "";
+    if (!projectPath) return json(res, 400, { error: "缺少 project" });
+    return json(res, 200, readProjectPreview(projectPath, url.searchParams.get("path") || ""));
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/project-file-data") {
+    const projectPath = url.searchParams.get("project") || "";
+    if (!projectPath) return json(res, 400, { error: "缺少 project" });
+    return json(res, 200, readProjectFileData(projectPath, url.searchParams.get("path") || ""));
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/context/file") {
+    const body = await readBody(req);
+    return json(res, 200, readProjectFile(body));
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/context/search") {
+    const body = await readBody(req);
+    return json(res, 200, searchProject(body));
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/context/bundle") {
+    const body = await readBody(req);
+    return json(res, 200, buildContextBundle(body));
   }
 
   if (req.method === "GET" && url.pathname === "/api/actions/task-status") {
@@ -159,6 +244,7 @@ async function handle(req, res) {
 
     if (mode === "new") {
       const launched = await launchNewTask(projectPath, prompt);
+      recordHandoff(source, projectPath, launched.sessionId, launched.transport);
       newTaskStates.set(launched.sessionId, { known: true, running: true, completed: false });
       launched.finished.then((success) => {
         newTaskStates.set(launched.sessionId, { known: true, running: false, completed: true, success });
@@ -194,6 +280,7 @@ async function handle(req, res) {
         }
       }
       const queued = await queueToSession(sessionId, prompt, { projectPath });
+      recordHandoff(source, projectPath, sessionId, queued.transport);
 
       const via = queued.transport === "state-db-queue"
         ? "Codex 本地持久队列"
@@ -237,7 +324,7 @@ const server = http.createServer((req, res) => {
   const requestStarted = Date.now();
   handle(req, res).catch((error) => {
     console.error(error);
-    json(res, 500, { error: error.message || "Bridge 内部错误" });
+    json(res, error.status || 500, { error: error.message || "Bridge 内部错误", code: error.code || null });
   }).finally(() => {
     const ms = Date.now() - requestStarted;
     if (ms >= 100) console.log(`[API] ${req.method} ${req.url} ${ms}ms`);
@@ -255,7 +342,7 @@ server.on("error", (error) => {
 
 server.listen(PORT, HOST, () => {
   const state = getStateIndexInfo();
-  console.log("Sol → Codex Local Bridge v0.2.10");
+  console.log("Sol → Codex Local Bridge v0.2.11");
   console.log(`Listening: http://${HOST}:${PORT}`);
   console.log(`Codex: ${codexSnapshot.version || "NOT FOUND"}`);
   console.log(`State DB: ${state.stateDb || "fallback to JSONL"}`);

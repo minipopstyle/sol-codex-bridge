@@ -255,7 +255,7 @@ printf '%s' "$TOKEN" | pbcopy
 
 HEALTH="$(/usr/bin/curl -fsS --max-time 2 "http://127.0.0.1:${PORT}/api/health" 2>/dev/null || true)"
 echo
-echo "✅ Sol → Codex Local Bridge v0.2.10 已启动"
+echo "✅ Sol → Codex Local Bridge v0.2.11 已启动"
 echo "Bridge: http://127.0.0.1:${PORT}"
 if [[ -s "$DATA_HOME/manual.pid" ]]; then
   echo "启动方式: 后台 fallback（本次登录会话有效；restart-bridge.command 可重新拉起）"

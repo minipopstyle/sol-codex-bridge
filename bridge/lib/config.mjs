@@ -16,16 +16,20 @@ export function loadConfig() {
   try {
     const parsed = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf8"));
     return {
-      userProjects: Array.isArray(parsed.userProjects) ? parsed.userProjects : []
+      userProjects: Array.isArray(parsed.userProjects) ? parsed.userProjects : [],
+      readAllowedProjects: Array.isArray(parsed.readAllowedProjects) ? parsed.readAllowedProjects : []
     };
   } catch {
-    return { userProjects: [] };
+    return { userProjects: [], readAllowedProjects: [] };
   }
 }
 
 export function saveConfig(config) {
   ensureBridgeHome();
-  const clean = { userProjects: [...new Set(config.userProjects || [])] };
+  const clean = {
+    userProjects: [...new Set(config.userProjects || [])],
+    readAllowedProjects: [...new Set(config.readAllowedProjects || [])]
+  };
   fs.writeFileSync(CONFIG_PATH, `${JSON.stringify(clean, null, 2)}\n`, { mode: 0o600 });
   return clean;
 }

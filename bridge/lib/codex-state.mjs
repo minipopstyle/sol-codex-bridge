@@ -574,6 +574,31 @@ export function discoverSessions(projectPath) {
   };
 }
 
+export function getSessionById(sessionId) {
+  if (!initialized) initializeStateIndex();
+  const id = String(sessionId || "").trim();
+  if (!id) return null;
+  return index.sessionsById?.[id] || null;
+}
+
+export function assertSessionBelongsToProject(sessionId, projectPath) {
+  const session = getSessionById(sessionId);
+  if (!session) throw Object.assign(new Error("Codex 会话不存在或尚未被索引"), { status: 404, code: "SESSION_NOT_FOUND" });
+  const root = normalizeProjectPath(projectPath);
+  const cwd = normalizeProjectPath(session.cwd);
+  const relative = root && cwd ? path.relative(root, cwd) : "..";
+  if (!root || !cwd || relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+    throw Object.assign(new Error("Codex 会话不属于当前项目"), { status: 403, code: "SESSION_PROJECT_MISMATCH" });
+  }
+  return session;
+}
+
+export function isKnownProject(projectPath) {
+  if (!initialized) initializeStateIndex();
+  const root = normalizeProjectPath(projectPath);
+  return Boolean(root && index.projects?.some((project) => project.path === root));
+}
+
 export function addUserProject(projectPath) {
   if (!projectPath || !path.isAbsolute(projectPath)) throw new Error("请输入本地项目的绝对路径");
   if (!existsDir(projectPath)) throw new Error("目录不存在");
