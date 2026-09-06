@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Sol ↔ Codex Local Bridge",
-  "version": "0.2.11",
+  "version": "0.2.12",
   "description": "Bridge ChatGPT and local Codex projects, sessions, Git context, and read-only project files.",
   "permissions": [
     "activeTab",

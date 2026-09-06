@@ -4,19 +4,19 @@ const $ = (id) => document.getElementById(id);
 const els = {
   bridgeDot: $("bridgeDot"), bridgeText: $("bridgeText"), pairCard: $("pairCard"),
   tokenInput: $("tokenInput"), saveToken: $("saveToken"), pairError: $("pairError"),
-  prompt: $("prompt"), contextMeta: $("contextMeta"), captureContext: $("captureContext"),
+  prompt: $("prompt"), contextMeta: $("contextMeta"), payloadHint: $("payloadHint"), captureContext: $("captureContext"),
   sourceState: $("sourceState"), sourceVersion: $("sourceVersion"), sourceLive: $("sourceLive"), sourceSent: $("sourceSent"),
   refreshAll: $("refreshAll"), projectSelect: $("projectSelect"), projectPath: $("projectPath"),
   toggleAddProject: $("toggleAddProject"), addProjectBox: $("addProjectBox"),
   projectPathInput: $("projectPathInput"), addProject: $("addProject"), projectError: $("projectError"),
   sessionCard: $("sessionCard"), sessionCardTitle: $("sessionCardTitle"), sessionSelect: $("sessionSelect"), sessionMeta: $("sessionMeta"), sessionSync: $("sessionSync"),
-  modeHint: $("modeHint"), openApp: $("openApp"), send: $("send"), sendLabel: $("sendLabel"), sendLoader: $("sendLoader"), sendElapsed: $("sendElapsed"),
+  modeHint: $("modeHint"), payloadMode: $("payloadMode"), openApp: $("openApp"), send: $("send"), sendLabel: $("sendLabel"), sendLoader: $("sendLoader"), sendElapsed: $("sendElapsed"),
   actionError: $("actionError"), toast: $("toast"), contextPermission: $("contextPermission"),
   pushView: $("pushView"), pullView: $("pullView"), contextManage: $("contextManage"), contextPermissionMenu: $("contextPermissionMenu"),
   disableContext: $("disableContext"), contextTargetMeta: $("contextTargetMeta"), contextPermissionBox: $("contextPermissionBox"),
   contextPermissionPath: $("contextPermissionPath"), allowContext: $("allowContext"), contextFileTools: $("contextFileTools"),
   contextSearchInput: $("contextSearchInput"), contextSearch: $("contextSearch"), contextResults: $("contextResults"),
-  contextPreviewContent: $("contextPreviewContent"), contextPreviewMeta: $("contextPreviewMeta"), insertContext: $("insertContext"), contextError: $("contextError"),
+  contextPreviewContent: $("contextPreviewContent"), contextPreviewMeta: $("contextPreviewMeta"), addContextFile: $("addContextFile"), insertContext: $("insertContext"), contextError: $("contextError"),
   standardContextView: $("standardContextView"), projectFilesView: $("projectFilesView"),
   projectFilesProjectName: $("projectFilesProjectName"), projectFilesRefresh: $("projectFilesRefresh"),
   projectFilesTreeView: $("projectFilesTreeView"), projectFilePreviewView: $("projectFilePreviewView"),
@@ -31,6 +31,7 @@ let sessions = [];
 let sessionCacheByProject = {};
 let selectedSessionByProject = {};
 let mode = "new";
+let handoffPayloadMode = "auto";
 let currentSource = null;
 let lastSent = null;
 let activeTabId = null;
@@ -40,10 +41,15 @@ let taskPoll = null;
 let elapsedTimer = null;
 let elapsedStartedAt = 0;
 let bridgeDirection = "push";
-let contextPart = "snapshot";
+let contextPart = "project";
 let contextPermission = null;
 let contextText = "";
 let contextResults = [];
+let contextLimits = null;
+let contextSummary = "";
+let contextFile = null;
+let contextFileBusy = false;
+let contextFileAdded = false;
 let contextBusy = false;
 let contextPermissionMenuOpen = false;
 let contextIndexVersion = 0;
@@ -224,6 +230,23 @@ function formatNumber(value) {
   return i18n.formatNumber(value);
 }
 
+function formatBytes(value) {
+  const bytes = Math.max(0, Number(value) || 0);
+  if (bytes < 1024) return `${formatNumber(bytes)} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(bytes >= 10 * 1024 ? 0 : 1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function renderPayloadHint() {
+  const text = els.prompt.value.trim();
+  if (!text) return els.payloadHint.classList.add("hidden");
+  const bytes = new TextEncoder().encode(text).length;
+  const lines = text.split(/\r?\n/).length - (text.endsWith("\n") ? 1 : 0);
+  const artifact = handoffPayloadMode === "artifact" || (handoffPayloadMode === "auto" && (bytes > 24_000 || lines > 300));
+  els.payloadHint.textContent = t(artifact ? "send.artifactHint" : "send.inlineHint", { size: formatBytes(bytes) });
+  els.payloadHint.classList.remove("hidden");
+}
+
 function renderBridgeStatus() {
   const { kind, health } = bridgeView;
   if (kind === "online" && health) {
@@ -251,6 +274,7 @@ function renderCachedBridge(saved) {
 }
 
 function renderSourceState() {
+  renderPayloadHint();
   els.sourceState.className = "source-state neutral";
   els.sourceLive.textContent = "";
   if (!currentSource) {
@@ -293,7 +317,7 @@ function applySource(source, sent = undefined) {
   }
   els.contextMeta.textContent = t("plan.sourceMeta", {
     title: source.title || "ChatGPT",
-    count: t("plan.characters", { count: formatNumber(source.text.length) })
+    count: t("plan.bytes", { count: formatBytes(new TextEncoder().encode(source.text || "").length) })
   });
   renderSourceState();
 }
@@ -480,7 +504,7 @@ async function captureContext(showReading = true) {
       lastAutoPrompt = "";
       els.contextMeta.textContent = t("plan.selectedMeta", {
         label: t("plan.selectedText"),
-        count: t("plan.characters", { count: formatNumber(response.text.length) })
+        count: t("plan.bytes", { count: formatBytes(new TextEncoder().encode(response.text).length) })
       });
       els.sourceLive.textContent = t("plan.selected");
     } else {
@@ -488,7 +512,7 @@ async function captureContext(showReading = true) {
       lastAutoPrompt = response.text;
       els.contextMeta.textContent = t("plan.selectedMeta", {
         label: t("plan.latestAssistant"),
-        count: t("plan.characters", { count: formatNumber(response.text.length) })
+        count: t("plan.bytes", { count: formatBytes(new TextEncoder().encode(response.text).length) })
       });
       // Content script will publish source metadata to background; refresh its state shortly.
       setTimeout(restoreSourceState, 120);
@@ -504,11 +528,15 @@ async function onProjectChanged(refresh = true) {
   if (!project) return;
   contextText = "";
   contextResults = [];
+  contextLimits = null;
+  contextSummary = "";
+  contextFile = null;
+  contextFileAdded = false;
   await store({ selectedProject: project.path });
   useCachedSessions(project.path);
   if (refresh) await syncSessions(project.path, { quiet: true });
   await syncContextPermission();
-  if (bridgeDirection === "pull" && contextPermission === true && (contextPart === "files" || selectedSession())) {
+  if (bridgeDirection === "pull" && contextPermission === true && (contextPart === "files" || contextPart === "project" || selectedSession())) {
     await pullSideContext(contextPart);
   }
 }
@@ -535,6 +563,7 @@ async function contextBg(message) {
   if (!result?.ok) {
     const error = new Error(result?.error || t("error.contextRead"));
     error.status = result?.status;
+    error.code = result?.code;
     throw error;
   }
   return result.data;
@@ -545,6 +574,7 @@ function contextTarget() {
 }
 
 const contextLabels = {
+  project: "context.tabs.project",
   snapshot: "context.tabs.snapshot",
   transcript: "context.tabs.transcript",
   git: "context.tabs.git",
@@ -559,12 +589,14 @@ function formatBytes(value) {
 
 function contextCacheKey(part, project, session) {
   const indexVersion = Number(sessionCacheByProject[project.path]?.indexVersion || contextIndexVersion || 0);
-  return `${project.path}\0${session.id}\0${part}\0${indexVersion}`;
+  return `${project.path}\0${session?.id || ""}\0${part}\0${indexVersion}`;
 }
 
 function applyCachedContext(cached) {
   contextText = cached?.text || "";
   contextResults = cached?.results || [];
+  contextLimits = cached?.limits || null;
+  contextSummary = cached?.summary || "";
   contextCapturedAt = cached?.capturedAt || null;
 }
 
@@ -903,6 +935,8 @@ async function enterProjectFiles() {
   contextPart = "files";
   contextText = "";
   contextResults = [];
+  contextLimits = null;
+  contextSummary = "";
   contextCapturedAt = null;
   contextBusy = false;
   renderContext();
@@ -933,11 +967,12 @@ async function enterProjectFiles() {
 function renderContext() {
   const { project, session } = contextTarget();
   const projectFilesActive = contextPart === "files";
+  const projectContextActive = contextPart === "project";
   els.contextTargetMeta.textContent = projectFilesActive
     ? project ? (project.name || project.path) : t("files.noProject")
     : !project
       ? t("context.chooseProject")
-      : session ? t("context.selectType") : t("context.chooseSession");
+      : projectContextActive || session ? t("context.selectType") : t("context.chooseSession");
   els.contextPermission.textContent = contextPermission === true
     ? t("context.permissionAllowed")
     : contextPermission === false ? t("context.permissionDenied") : t("context.permissionNotChecked");
@@ -952,9 +987,11 @@ function renderContext() {
     : contextText || t("context.selectToRead", { label: contextLabel });
   const contextStamp = contextCapturedAt ? ` · ${formatTime(contextCapturedAt)}` : "";
   els.contextPreviewMeta.textContent = contextText
-    ? `${contextLabel}${contextStamp} · ${formatBytes(new Blob([contextText]).size)}`
+    ? contextSummary || `${contextLabel}${contextStamp} · ${formatBytes(new Blob([contextText]).size)}`
     : contextBusy ? t("context.reading") : t("context.unread");
   els.insertContext.disabled = projectFilesActive || !contextText || contextBusy;
+  els.addContextFile.textContent = contextFileBusy ? t("context.addingFile") : contextFileAdded ? t("context.fileAdded") : t("context.addFile");
+  els.addContextFile.disabled = projectFilesActive || !contextFile?.text || contextBusy || contextFileBusy || contextFileAdded;
   els.contextSearch.disabled = contextBusy;
   document.querySelectorAll(".context-tab").forEach((button) => button.classList.toggle("active", button.dataset.contextPart === contextPart));
   els.contextResults.replaceChildren();
@@ -997,6 +1034,21 @@ function contextGitText(git) {
   ].filter(Boolean).join("\n");
 }
 
+function contextBundleSummary(data) {
+  const profile = data?.context?.project;
+  if (!profile?.stats) return "";
+  const limits = data?.limits || data?.context?.limits || contextLimits;
+  return t("context.summary", {
+    project: profile.name || "",
+    files: formatNumber(profile.stats.files),
+    configs: formatNumber(profile.configs?.length || 0),
+    changed: formatNumber(profile.changedFiles?.length || 0),
+    session: data?.context?.session ? "1" : "0",
+    bytes: formatBytes(limits?.bytes || new Blob([data.text || ""]).size),
+    truncated: limits?.truncated ? ` · ${t("context.truncated")}` : ""
+  });
+}
+
 async function pullSideContext(part = contextPart) {
   contextPart = part;
   els.contextError.textContent = "";
@@ -1005,11 +1057,15 @@ async function pullSideContext(part = contextPart) {
     await enterProjectFiles();
     return;
   }
-  if (!project || !session) {
+  if (!project || (part !== "project" && !session)) {
     contextText = "";
     contextResults = [];
+    contextLimits = null;
+    contextSummary = "";
+    contextFile = null;
+    contextFileAdded = false;
     contextCapturedAt = null;
-    els.contextError.textContent = t("error.noProjectSession");
+    els.contextError.textContent = project ? t("context.chooseSession") : t("context.chooseProject");
     renderContext();
     return;
   }
@@ -1018,7 +1074,7 @@ async function pullSideContext(part = contextPart) {
     if (contextPermission !== true) return;
   }
   const cacheKey = contextCacheKey(part, project, session);
-  if (pullContextCache.has(cacheKey)) {
+  if (part !== "project" && pullContextCache.has(cacheKey)) {
     applyCachedContext(pullContextCache.get(cacheKey));
     contextBusy = false;
     renderContext();
@@ -1027,17 +1083,32 @@ async function pullSideContext(part = contextPart) {
 
   contextText = "";
   contextResults = [];
+  contextLimits = null;
+  contextSummary = "";
+  contextFile = null;
+  contextFileAdded = false;
   contextCapturedAt = null;
   contextBusy = true;
   renderContext();
   try {
     let data;
+    if (part === "project") data = await contextBg({
+      type: "SOL_CODEX_CONTEXT_BUNDLE",
+      projectPath: project.path,
+      sessionId: session?.id || null,
+      profile: "project",
+      parts: ["project", "environment", "git", ...(session ? ["snapshot", "transcript"] : [])]
+    });
     if (part === "snapshot") data = await contextBg({ type: "SOL_CODEX_CONTEXT_SNAPSHOT", projectPath: project.path, sessionId: session.id });
     if (part === "transcript") data = await contextBg({ type: "SOL_CODEX_CONTEXT_SESSION", projectPath: project.path, sessionId: session.id, maxMessages: 60 });
     if (part === "git") data = await contextBg({ type: "SOL_CODEX_CONTEXT_GIT", projectPath: project.path });
     contextText = part === "git" ? contextGitText(data) : String(data?.text || "");
+    contextLimits = data?.limits || data?.context?.limits || null;
+    contextSummary = part === "project" ? contextBundleSummary(data) : "";
+    contextFile = part === "project" ? data?.file || null : null;
+    contextFileAdded = false;
     contextCapturedAt = data?.capturedAt || data?.session?.updatedAt || data?.updatedAt || Date.now();
-    pullContextCache.set(cacheKey, { text: contextText, results: [], capturedAt: contextCapturedAt });
+    if (part !== "project") pullContextCache.set(cacheKey, { text: contextText, results: [], limits: contextLimits, summary: contextSummary, capturedAt: contextCapturedAt });
   } catch (error) {
     els.contextError.textContent = error.message;
   } finally {
@@ -1056,7 +1127,7 @@ async function allowSideContext() {
     await contextBg({ type: "SOL_CODEX_CONTEXT_PERMISSION", projectPath: project.path, allowed: true });
     contextPermission = true;
     contextBusy = false;
-    await pullSideContext(contextPart === "files" ? "files" : "snapshot");
+    await pullSideContext(contextPart);
   } catch (error) {
     els.contextError.textContent = error.message;
     contextBusy = false;
@@ -1073,6 +1144,10 @@ async function disableSideContext() {
     contextPermissionMenuOpen = false;
     contextText = "";
     contextResults = [];
+    contextLimits = null;
+    contextSummary = "";
+    contextFile = null;
+    contextFileAdded = false;
     renderContext();
   } catch (error) {
     els.contextError.textContent = error.message;
@@ -1148,6 +1223,27 @@ async function sendToChatGPT(message) {
 
 async function insertSideContext() {
   await insertTextSideContext(contextText);
+}
+
+async function addSideContextFile() {
+  if (!contextFile?.text || contextFileBusy || contextFileAdded) return;
+  contextFileBusy = true;
+  els.contextError.textContent = "";
+  renderContext();
+  try {
+    await sendToChatGPT({
+      type: "SOL_CODEX_ATTACH_CONTEXT_FILE",
+      file: { name: contextFile.filename, mime: contextFile.mimeType, content: contextFile.text }
+    });
+    contextFileAdded = true;
+    showToast(t("toast.contextFileAdded"));
+  } catch (error) {
+    const attachError = new Set(["NO_UPLOAD_INPUT", "NO_COMPOSER", "UPLOAD_INPUT_REJECTED", "ATTACHMENT_NOT_DETECTED", "INVALID_FILE"]);
+    els.contextError.textContent = attachError.has(error.code) ? t("error.contextFileAttachFailed") : error.message || t("error.contextFileAttachFailed");
+  } finally {
+    contextFileBusy = false;
+    renderContext();
+  }
 }
 
 async function insertProjectFile() {
@@ -1235,7 +1331,7 @@ async function setDirection(next, persist = true) {
   renderDirection();
   if (bridgeDirection === "pull") {
     await syncContextPermission();
-    if (contextPermission === true && selectedProject() && selectedSession()) await pullSideContext(contextPart || "snapshot");
+    if (contextPermission === true && selectedProject() && (contextPart === "project" || selectedSession())) await pullSideContext(contextPart || "project");
   }
 }
 
@@ -1329,6 +1425,7 @@ async function send() {
           sessionId: session?.id || null,
           prompt,
           source,
+          payloadMode: handoffPayloadMode,
           openApp: els.openApp.checked
         })
       }
@@ -1343,7 +1440,9 @@ async function send() {
       lastSent = marked.lastSent || source;
       renderSourceState();
     }
-    showToast(result.data.warning || result.data.message || t("toast.sent"));
+    showToast(result.data.payload?.mode === "artifact"
+      ? t("toast.sentArtifact", { size: formatBytes(result.data.payload.originalBytes) })
+      : result.data.warning || result.data.message || t("toast.sent"));
     if (result.data.warning) els.actionError.textContent = result.data.warning;
     setTimeout(() => syncSessions(project.path, { quiet: true }), 900);
   } catch (error) {
@@ -1411,8 +1510,14 @@ els.saveToken.addEventListener("click", saveToken);
 els.send.addEventListener("click", send);
 els.openApp.addEventListener("change", () => store({ openApp: els.openApp.checked }));
 els.prompt.addEventListener("input", () => {
+  renderPayloadHint();
   if (currentSource && els.prompt.value !== currentSource.text) els.sourceLive.textContent = t("plan.edited");
   else renderSourceState();
+});
+els.payloadMode.addEventListener("change", async () => {
+  handoffPayloadMode = ["inline", "artifact", "auto"].includes(els.payloadMode.value) ? els.payloadMode.value : "auto";
+  await store({ handoffPayloadMode });
+  renderPayloadHint();
 });
 document.querySelectorAll(".context-tab").forEach((button) => button.addEventListener("click", () => {
   if (button.dataset.contextPart === "files") enterProjectFiles();
@@ -1422,6 +1527,7 @@ els.allowContext.addEventListener("click", allowSideContext);
 els.disableContext.addEventListener("click", disableSideContext);
 els.contextSearch.addEventListener("click", searchSideContext);
 els.contextSearchInput.addEventListener("keydown", (event) => { if (event.key === "Enter") searchSideContext(); });
+els.addContextFile.addEventListener("click", addSideContextFile);
 els.insertContext.addEventListener("click", insertSideContext);
 els.projectFilesRefresh.addEventListener("click", refreshProjectFiles);
 els.projectFilesBack.addEventListener("click", () => {
@@ -1442,6 +1548,11 @@ document.querySelectorAll(".language-switch button").forEach((button) => {
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== "local") return;
   if (changes.uiLanguage) applyLanguage(changes.uiLanguage.newValue);
+  if (changes.handoffPayloadMode) {
+    handoffPayloadMode = ["inline", "artifact", "auto"].includes(changes.handoffPayloadMode.newValue) ? changes.handoffPayloadMode.newValue : "auto";
+    els.payloadMode.value = handoffPayloadMode;
+    renderPayloadHint();
+  }
   if (changes.selectedProject) {
     contextPermission = null;
     resetProjectFilesState();
@@ -1453,7 +1564,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
   // Phase 1: restore durable UI state immediately. No Bridge request is needed.
   const saved = await chrome.storage.local.get([
     "bridgeToken", "bridgeHealth", "projectCache", "sessionCacheByProject",
-    "selectedProject", "selectedSessionByProject", "mode", "openApp", "bridgeDirection", "uiLanguage"
+    "selectedProject", "selectedSessionByProject", "mode", "handoffPayloadMode", "openApp", "bridgeDirection", "uiLanguage"
   ]);
   const locale = i18n.normalizeLocale(saved.uiLanguage);
   if (saved.uiLanguage !== locale) await store({ uiLanguage: locale });
@@ -1464,6 +1575,8 @@ chrome.storage.onChanged.addListener((changes, area) => {
   bridgeDirection = saved.bridgeDirection === "pull" ? "pull" : "push";
   if (saved.bridgeDirection !== "push" && saved.bridgeDirection !== "pull") store({ bridgeDirection: "push" });
   els.openApp.checked = saved.openApp !== false;
+  handoffPayloadMode = ["inline", "artifact", "auto"].includes(saved.handoffPayloadMode) ? saved.handoffPayloadMode : "auto";
+  els.payloadMode.value = handoffPayloadMode;
   setMode(saved.mode === "queue" ? "queue" : "new", false);
   if (saved.mode !== "new" && saved.mode !== "queue") store({ mode: "new" });
   renderCachedBridge(saved);
@@ -1474,7 +1587,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (!token) els.pairCard.classList.remove("hidden");
   await restoreSourceState();
   await syncContextPermission();
-  if (bridgeDirection === "pull" && contextPermission === true && selectedSession()) await pullSideContext("snapshot");
+  if (bridgeDirection === "pull" && contextPermission === true && selectedProject()) await pullSideContext("project");
 
   // Phase 2: silent freshness check. Cached lists remain visible while this runs.
   checkBridge({ quiet: true }).then(() => token && syncProjects({ quiet: true }));

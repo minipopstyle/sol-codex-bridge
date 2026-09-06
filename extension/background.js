@@ -60,6 +60,7 @@ async function getCachedState() {
     "selectedProject",
     "selectedSessionByProject",
     "mode",
+    "handoffPayloadMode",
     "openApp",
     "chatgptSourceByTab",
     "chatgptRevisionStateByConversation",
@@ -186,7 +187,7 @@ async function markSent(source) {
 
 async function getQuickTarget() {
   const saved = await chrome.storage.local.get([
-    "bridgeToken", "selectedProject", "selectedSessionByProject", "mode", "openApp",
+    "bridgeToken", "selectedProject", "selectedSessionByProject", "mode", "handoffPayloadMode", "openApp",
     "projectCache", "sessionCacheByProject"
   ]);
   const projectPath = String(saved.selectedProject || "");
@@ -198,6 +199,7 @@ async function getQuickTarget() {
   return {
     ready,
     mode,
+    payloadMode: ["inline", "artifact", "auto"].includes(saved.handoffPayloadMode) ? saved.handoffPayloadMode : "auto",
     projectPath,
     projectName: project?.name || (projectPath ? projectPath.split(/[\\/]/).filter(Boolean).pop() : ""),
     sessionId: sessionId || null,
@@ -236,6 +238,7 @@ async function quickSend(raw, sender) {
       sessionId: target.sessionId,
       prompt: source.text,
       source,
+      payloadMode: target.payloadMode,
       openApp: target.openApp
     })
   });
@@ -279,8 +282,10 @@ async function contextRequest(message) {
     case "SOL_CODEX_CONTEXT_BUNDLE":
       return bridgeFetch("/api/context/bundle", { method: "POST", body: JSON.stringify({
         projectPath,
+        workspaceRoot: message.workspaceRoot || "",
         sessionId,
         parts: message.parts,
+        profile: message.profile || "",
         options: message.options || {}
       }) });
     default:

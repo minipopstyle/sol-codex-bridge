@@ -65,6 +65,7 @@ Codex Session / Project Files / Git
 
 点击 `← Sol` 后，可从当前已选项目和会话读取：
 
+- 项目上下文
 - 最近进度 Snapshot
 - Session transcript
 - Git Diff
@@ -256,9 +257,9 @@ Bridge 会把当前 ChatGPT 内容追加到这个会话，而不是重新创建�
 ### Codex → Sol：读取 Context
 
 1. 在侧栏切换到 **Codex → Sol**
-2. 选择项目和 Codex 会话；若未选择，会优先使用活跃/使用中的最新会话
+2. 选择项目；需要会话的内容会优先使用活跃/使用中的最新会话
 3. 首次读取时点击“允许读取”
-4. 选择“最近进度”“会话记录”“Git Diff”或“项目文件”
+4. 选择“项目上下文”“最近进度”“会话记录”“Git Diff”或“项目文件”
 5. 检查 Context Preview 后点击“插入 ChatGPT”
 6. 回到 ChatGPT，确认内容后由用户手动点击 Send
 

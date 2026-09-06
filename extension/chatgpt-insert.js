@@ -58,13 +58,35 @@
     return { ok: true };
   }
 
-  function findFileInput() {
+  function findComposerFileInput() {
     const root = composer();
     const form = root?.closest("form") || (root?.tagName === "FORM" ? root : null);
-    const all = [...document.querySelectorAll('input[type="file"]')];
-    const scoped = all.filter((input) => root?.contains(input) || form?.contains(input));
-    const image = scoped.find((input) => /image/i.test(input.accept || ""));
-    return image || scoped[0] || (all.length === 1 ? all[0] : null);
+    if (!root && !form) return null;
+    const scoped = [...document.querySelectorAll('input[type="file"]')]
+      .filter((input) => (root?.contains(input) || form?.contains(input)) && !input.closest("article,[data-message-id],[data-testid*='history' i]"));
+    const visible = scoped.filter((input) => input.offsetParent !== null || input.getClientRects().length > 0);
+    const candidates = visible.length ? visible : scoped;
+    return candidates.find((input) => /image/i.test(input.accept || "")) || candidates[0] || null;
+  }
+
+  const findFileInput = findComposerFileInput;
+
+  async function attachFile({ name, mime, content }) {
+    if (!String(name || "").trim() || content == null) return { ok: false, code: "INVALID_FILE" };
+    const input = findComposerFileInput();
+    if (!input) return { ok: false, code: "NO_UPLOAD_INPUT" };
+    const file = new File([String(content)], String(name), { type: String(mime || "text/plain") });
+    try {
+      const dataTransfer = new DataTransfer();
+      dataTransfer.items.add(file);
+      input.files = dataTransfer.files;
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    } catch {
+      return { ok: false, code: "UPLOAD_INPUT_REJECTED" };
+    }
+    const attached = await waitForAttachment(composer(), file);
+    return attached ? { ok: true } : { ok: false, code: "ATTACHMENT_NOT_DETECTED" };
   }
 
   function attachmentDetected(root, file) {
@@ -94,7 +116,7 @@
 
   async function attachImage({ name, mime, base64 }) {
     if (!/^image\//i.test(String(mime || "")) || !base64) return { ok: false, code: "INVALID_IMAGE" };
-    const input = findFileInput();
+    const input = findComposerFileInput();
     if (!input) return { ok: false, code: "NO_UPLOAD_INPUT" };
     let bytes;
     try {
@@ -119,5 +141,5 @@
     return attached ? { ok: true } : { ok: false, code: "ATTACHMENT_NOT_DETECTED" };
   }
 
-  globalThis.SolCodexChatGPT = { insertText, attachImage, findFileInput };
+  globalThis.SolCodexChatGPT = { insertText, attachImage, attachFile, findFileInput, findComposerFileInput };
 })();

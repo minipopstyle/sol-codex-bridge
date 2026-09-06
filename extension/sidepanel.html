@@ -78,6 +78,7 @@
           </div>
           <div id="sourceSent" class="source-sub" data-i18n="plan.following">插件会自动跟踪当前 ChatGPT 最新回复</div>
         </div>
+        <div id="payloadHint" class="payload-hint hidden"></div>
         <div id="contextMeta" class="meta" data-i18n="common.loading">加载中…</div>
         <textarea id="prompt" rows="6" placeholder="这里会自动读取当前 ChatGPT / Sol 的最新回复。也可以手动修改。" data-i18n-placeholder="plan.promptPlaceholder"></textarea>
       </section>
@@ -97,6 +98,16 @@
           <span data-i18n="send.openCodex">发送后切换到 Codex（已有会话会打开目标会话）</span>
         </label>
       </section>
+
+      <details class="card compact advanced-card">
+        <summary data-i18n="settings.advanced">高级选项</summary>
+        <label for="payloadMode" data-i18n="settings.payloadMode">长内容发送方式</label>
+        <select id="payloadMode">
+          <option value="auto" data-i18n="settings.payloadAuto">自动</option>
+          <option value="inline" data-i18n="settings.payloadInline">始终作为文本</option>
+          <option value="artifact" data-i18n="settings.payloadArtifact">始终作为文件</option>
+        </select>
+      </details>
 
       <div id="actionError" class="error action-error"></div>
       <button id="send" class="btn primary"><span id="sendLoader" class="pixel-loader hidden" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span id="sendLabel" data-i18n="send.toCodex">发送到 Codex</span><span id="sendElapsed" class="send-elapsed hidden"></span></button>
@@ -120,7 +131,8 @@
           <button id="disableContext" class="text-btn danger-text" data-i18n="context.disablePermission">关闭读取权限</button>
         </div>
         <div class="context-tabs" role="tablist">
-          <button data-context-part="snapshot" class="context-tab active" role="tab" data-i18n="context.tabs.snapshot">最近进度</button>
+          <button data-context-part="project" class="context-tab active" role="tab" data-i18n="context.tabs.project">项目上下文</button>
+          <button data-context-part="snapshot" class="context-tab" role="tab" data-i18n="context.tabs.snapshot">最近进度</button>
           <button data-context-part="transcript" class="context-tab" role="tab" data-i18n="context.tabs.transcript">会话记录</button>
           <button data-context-part="git" class="context-tab" role="tab" data-i18n="context.tabs.git">Git Diff</button>
           <button data-context-part="files" class="context-tab" role="tab" data-i18n="context.tabs.files">项目文件</button>
@@ -145,7 +157,10 @@
             </div>
             <pre id="contextPreviewContent" class="context-preview-content" data-i18n="context.emptyPreview">选择读取内容后显示</pre>
           </div>
-          <button id="insertContext" class="btn primary" disabled data-i18n="context.insert">插入 ChatGPT</button>
+          <div class="context-actions">
+            <button id="addContextFile" class="btn primary" disabled data-i18n="context.addFile">📎 添加为项目上下文文件</button>
+            <button id="insertContext" class="btn secondary" disabled data-i18n="context.insertText">插入为文本</button>
+          </div>
         </div>
         <div id="projectFilesView" class="project-files-view hidden" aria-live="polite">
           <div class="project-files-toolbar">

@@ -1,5 +1,48 @@
 # 更新日志
 
+## 0.2.12
+
+这一版主要继续完善 **ChatGPT ↔ Codex 双向上下文交接**，补齐项目 Context，并优化长任务和页面内联操作体验。
+
+### 新增
+
+- **Sol 快捷卡片补齐项目上下文**
+  - Sol 与 Codex 两侧现在使用更一致的项目 / Session 上下文。
+  - 从 Codex 拉回内容时，可以更明确地知道当前 Context 来自哪个项目。
+- **项目文件能力增强**
+  - 项目文件可以直接选择并插入 ChatGPT。
+  - 减少手动打开文件、复制代码再回到 ChatGPT 的步骤。
+- **图片文件支持**
+  - 支持识别项目中的 PNG / JPG / WebP 等图片。
+  - 可以预览并加入 ChatGPT Context，方便继续进行 UI、设计稿和视觉问题分析。
+
+### 优化
+
+- **Sol / Codex 快捷按钮交互统一**
+  - 两个按钮使用一致的 hover / active 动效。
+  - 修复鼠标停留时动画反复播放导致的按钮抖动。
+- **长内容交接流程优化**
+  - 调整长 Prompt / 长任务发送流程。
+  - 保留先进入 Codex 执行、ChatGPT 页面继续显示任务状态的方式。
+  - 避免任务执行期间锁住当前 ChatGPT 会话。
+- **Loading 状态重新统一**
+  - 恢复 Pixel Grid Loading 动画。
+  - 保留实时执行计时和任务状态反馈。
+  - Sol → Codex 的执行状态更加清晰。
+- **项目 Context 状态对齐**
+  - Side Panel、Sol 快捷卡片和 Codex 快捷按钮共享更一致的项目状态。
+  - 减少切换入口后项目或 Session 不一致的问题。
+
+### 当前工作流
+
+`ChatGPT / Sol → 本地项目 / Session → Codex 执行`
+
+`Codex → Session / Git Diff / Project Files / Images → ChatGPT`
+
+目标仍然只有一个：
+
+**Think in ChatGPT. Build in Codex.**
+
 ## 0.2.11
 
 这版主要补齐了 **Sol ↔ Codex 双向上下文交接**，同时把项目文件读取和日常使用体验完善了一轮。

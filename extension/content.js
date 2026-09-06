@@ -101,9 +101,22 @@ let publishQueued = false;
 let quickTargetCache = null;
 let quickTargetAt = 0;
 let quickButtonBusy = false;
+let activeInlineTask = null;
 let contextPopover = null;
 let contextState = null;
 let contextPositionFrame = 0;
+
+const DRIVE_DELAYS = Array.from(
+  { length: 9 },
+  (_, i) => {
+    const r = Math.floor(i / 3);
+    const c = i % 3;
+
+    return (c + Math.abs(r - 1)) * 90;
+  }
+);
+const DRIVE_DURATION = 650;
+const inlineElapsedTimers = new WeakMap();
 
 async function contextRequest(message) {
   const result = await chrome.runtime.sendMessage(message);
@@ -227,8 +240,17 @@ async function pullContext(kind) {
   renderContextPopover();
   try {
     const { target } = state;
-    if (!target?.projectPath || !target.sessionId) throw new Error(t("error.noProjectSession"));
+    if (!target?.projectPath || (["snapshot", "transcript", "git"].includes(kind) && !target.sessionId)) {
+      throw new Error(t("error.noProjectSession"));
+    }
     let data;
+    if (kind === "project") data = await contextRequest({
+      type: "SOL_CODEX_CONTEXT_BUNDLE",
+      projectPath: target.projectPath,
+      sessionId: target.sessionId || null,
+      profile: "project",
+      parts: ["project", "environment", "git", ...(target.sessionId ? ["snapshot", "transcript"] : [])]
+    });
     if (kind === "snapshot") data = await contextRequest({ type: "SOL_CODEX_CONTEXT_SNAPSHOT", projectPath: target.projectPath, sessionId: target.sessionId });
     if (kind === "transcript") data = await contextRequest({ type: "SOL_CODEX_CONTEXT_SESSION", projectPath: target.projectPath, sessionId: target.sessionId, maxMessages: 60 });
     if (kind === "git") data = await contextRequest({ type: "SOL_CODEX_CONTEXT_GIT", projectPath: target.projectPath });
@@ -255,7 +277,7 @@ async function allowContextRead() {
     await contextRequest({ type: "SOL_CODEX_CONTEXT_PERMISSION", projectPath: state.target.projectPath, allowed: true });
     if (contextState !== state) return;
     state.allowed = true;
-    await pullContext("snapshot");
+    await pullContext(state.kind);
   } catch (error) {
     if (contextState === state) {
       state.error = error.message || String(error);
@@ -324,7 +346,7 @@ async function refreshContextTarget() {
     renderContextPopover();
     if (!state.allowed) return;
     if (state.kind === "files") fileController(state).loadRoot();
-    else if (target.sessionId) pullContext(state.kind);
+    else if (target.sessionId || state.kind === "project") pullContext(state.kind);
   } catch (error) {
     if (contextState !== state) return;
     state.loading = false;
@@ -384,6 +406,7 @@ function renderContextPopover() {
   const actions = document.createElement("div");
   actions.className = "sol-codex-context-tabs";
   const actionItems = [
+    ["project", t("context.tabs.project")],
     ["snapshot", t("context.tabs.snapshot")],
     ["transcript", t("context.tabs.transcript")],
     ["git", t("context.tabs.git")],
@@ -406,7 +429,7 @@ function renderContextPopover() {
   body.className = "sol-codex-context-body";
   if (contextState.kind === "files") {
     body.appendChild(renderProjectFiles(contextState));
-  } else if (!target.sessionId) {
+  } else if (!target.sessionId && contextState.kind !== "project") {
     const empty = document.createElement("div");
     empty.className = "sol-codex-context-muted";
     empty.textContent = t("context.chooseSession");
@@ -467,7 +490,7 @@ async function openContextPopover(button) {
   setQuickButtonVisual(button, "pull", "loading");
   const target = await getQuickTarget({ fresh: true });
   const state = {
-    target, button, allowed: null, kind: "snapshot", text: "", results: [], capturedAt: null, loading: true, error: "",
+    target, button, allowed: null, kind: "project", text: "", results: [], capturedAt: null, loading: true, error: "",
     fileCache: new Map(), fileExpanded: new Set([""]), fileLoading: new Set(), fileErrors: new Map(),
     fileDirectoryRequests: new Map(),
     fileSelected: null, fileSelectedPath: "", filePreview: null, filePreviewLoading: false, filePreviewError: "",
@@ -493,7 +516,7 @@ async function openContextPopover(button) {
     state.allowed = Boolean(permission.allowed);
     state.loading = false;
     renderContextPopover();
-    if (state.allowed && target.sessionId) pullContext("snapshot");
+    if (state.allowed && (target.sessionId || state.kind === "project")) pullContext(state.kind);
     else {
       setQuickButtonVisual(button, "pull", state.allowed ? "error" : "ready");
       if (!state.allowed) button.disabled = false;
@@ -519,46 +542,116 @@ function createArrowIcon(direction = "right", check = false) {
   return svg;
 }
 
+function createIconSlot(icon = null) {
+  const slot = document.createElement("span");
+  slot.className = "sol-codex-icon-slot";
+  if (icon) slot.appendChild(icon);
+  return slot;
+}
+
+function formatElapsed(ms) {
+  const total = ms / 1000;
+
+  if (total < 60) return `${total.toFixed(1)}s`;
+
+  return `${Math.floor(total / 60)}m ${(total % 60).toFixed(1)}s`;
+}
+
+function stopInlineElapsed(button) {
+  const timer = inlineElapsedTimers.get(button);
+  if (timer) clearInterval(timer);
+  inlineElapsedTimers.delete(button);
+}
+
+function startInlineElapsed(button) {
+  if (!button.dataset.loadingStartedAt) button.dataset.loadingStartedAt = String(Date.now());
+  stopInlineElapsed(button);
+
+  const update = () => {
+    if (!button.isConnected) {
+      stopInlineElapsed(button);
+      return;
+    }
+
+    const elapsed = button.querySelector(".sol-codex-loading-elapsed");
+    if (!elapsed) return;
+    const started = Number(button.dataset.loadingStartedAt);
+    elapsed.textContent = formatElapsed(Date.now() - started);
+  };
+
+  update();
+  inlineElapsedTimers.set(button, setInterval(update, 100));
+}
+
+function createDriveLoader() {
+  const grid = document.createElement("span");
+  grid.className = "sol-codex-loader-grid";
+  grid.setAttribute("aria-hidden", "true");
+
+  DRIVE_DELAYS.forEach((delay) => {
+    const pixel = document.createElement("span");
+    pixel.className = "sol-codex-loader-pixel";
+    pixel.style.animationDelay = `${delay}ms`;
+    pixel.style.animationDuration = `${DRIVE_DURATION}ms`;
+    grid.appendChild(pixel);
+  });
+
+  return grid;
+}
+
+function createLoadingLabel() {
+  const label = document.createElement("span");
+  label.className = "sol-codex-loading-label";
+  label.textContent = t("inline.loading");
+  return label;
+}
+
 function setQuickButtonVisual(button, action = "push", state = "ready", force = false) {
   const renderState = `${action}:${state}`;
+  const loadingState = state === "sending" || state === "running" || state === "loading";
+  if (!loadingState) {
+    stopInlineElapsed(button);
+    delete button.dataset.loadingStartedAt;
+  }
   if (!force && button.dataset.renderState === renderState) return;
   button.dataset.renderState = renderState;
   button.dataset.state = state;
   button.dataset.action = action;
+  button.dataset.variant = action === "pull" ? "sol" : "codex";
   button.replaceChildren();
-  button.setAttribute("aria-label", action === "pull" ? "← Sol" : "Codex →");
+  button.setAttribute("aria-label", loadingState ? t("inline.loadingTitle") : action === "pull" ? "← Sol" : "Codex →");
   const label = document.createElement("span");
   label.className = "sol-codex-inline-label";
 
   if (state === "ready") {
     const icon = createArrowIcon(action === "pull" ? "left" : "right");
-    if (action === "pull") button.append(icon, label);
-    else button.append(label, icon);
+    const slot = createIconSlot(icon);
+    if (action === "pull") button.append(slot, label);
+    else button.append(label, slot);
     label.textContent = t(action === "pull" ? "inline.pullReady" : "inline.ready");
     return;
   }
 
-  if (state === "loaded") {
-    label.textContent = t("inline.loaded");
-    button.appendChild(label);
+  if ((action === "pull" && ["loaded", "inserted"].includes(state)) || (action === "push" && state === "sent")) {
+    const slot = createIconSlot(createArrowIcon(action === "pull" ? "left" : "right", true));
+    label.textContent = t(action === "pull" ? "inline.pullReady" : "inline.ready");
+    if (action === "pull") button.append(slot, label);
+    else button.append(label, slot);
     return;
   }
 
-  if (state === "sent") {
-    label.textContent = t("inline.sent");
-    button.appendChild(label);
+  if (loadingState) {
+    const elapsed = document.createElement("span");
+    elapsed.className = "sol-codex-loading-elapsed";
+    button.append(createDriveLoader(), createLoadingLabel(), elapsed);
+    startInlineElapsed(button);
     return;
   }
 
-  if (state === "inserted") {
-    label.textContent = t("inline.inserted");
-    button.appendChild(label);
-    return;
-  }
-
-  const key = state === "sending" ? "inline.sending" : state === "running" ? "inline.running" : state === "loading" ? "inline.generating" : "inline.retry";
+  const key = "inline.retry";
   label.textContent = t(key);
-  button.appendChild(label);
+  if (action === "pull") button.append(createIconSlot(), label);
+  else button.append(label, createIconSlot());
 }
 
 function renderInlineButtonMeta(button) {
@@ -569,16 +662,14 @@ function renderInlineButtonMeta(button) {
     return;
   }
   if (action === "pull") {
-    button.title = !button.dataset.hasSession
-      ? t("inline.pullNeedSession")
+    button.title = !button.dataset.hasProject
+      ? t("context.chooseProject")
       : state === "loaded" ? t("inline.pullLoadedTitle")
         : state === "inserted" ? t("inline.pullInsertedTitle")
-          : t("inline.pullTitle");
+          : t("context.pullTitle");
     return;
   }
-  if (state === "loading") button.title = t("inline.streamingTitle");
-  else if (state === "sending") button.title = t("inline.sendingTitle");
-  else if (state === "running") button.title = t("inline.runningTitle");
+  if (state === "loading" || state === "sending" || state === "running") button.title = t("inline.loadingTitle");
   else if (state === "sent") button.title = t("inline.sentTitle", { target: button.dataset.targetDescription || "" });
   else if (state === "error") button.title = t("inline.retryTitle");
   else button.title = t("inline.pushTitle", { target: button.dataset.targetDescription ? `: ${button.dataset.targetDescription}` : "" });
@@ -595,12 +686,15 @@ function renderInlineButtons() {
 }
 
 function stopInlineTaskTimer(button) {
+  stopInlineElapsed(button);
   delete button.dataset.running;
 }
 
 function restoreQuickButton(button) {
   stopInlineTaskTimer(button);
+  if (activeInlineTask?.sessionId && activeInlineTask.sessionId === button.dataset.sessionId) activeInlineTask = null;
   delete button.dataset.running;
+  delete button.dataset.sessionId;
   button.dataset.holdUntil = String(Date.now() + 1800);
   setQuickButtonVisual(button, "push", "sent");
   renderInlineButtonMeta(button);
@@ -615,8 +709,13 @@ function restoreQuickButton(button) {
 
 function watchInlineTask(button, sessionId) {
   button.dataset.running = "true";
+  button.dataset.sessionId = sessionId;
   const check = async () => {
-    if (!button.isConnected) return stopInlineTaskTimer(button);
+    if (!button.isConnected) {
+      stopInlineTaskTimer(button);
+      if (activeInlineTask?.sessionId === sessionId) activeInlineTask = null;
+      return;
+    }
     try {
       const result = await chrome.runtime.sendMessage({
         type: "SOL_CODEX_BRIDGE_REQUEST",
@@ -679,21 +778,28 @@ async function sendFromInlineButton(button) {
   if (quickButtonBusy) return;
   quickButtonBusy = true;
   button.disabled = true;
+  const messageKey = button.closest(".sol-codex-inline-wrap")?.dataset.messageKey || "";
+  activeInlineTask = { messageKey, sessionId: null, state: "sending", startedAt: Date.now() };
+  button.dataset.loadingStartedAt = String(activeInlineTask.startedAt);
   setQuickButtonVisual(button, "push", "sending");
   renderInlineButtonMeta(button);
   try {
     const source = await buildLatestSource();
     if (!source?.text) throw new Error(t("error.noLatestReply"));
     if (source.isStreaming) throw new Error(t("error.replyGenerating"));
+    activeInlineTask = { ...activeInlineTask, messageKey: source.messageKey };
     const result = await chrome.runtime.sendMessage({ type: "SOL_CODEX_QUICK_SEND", source });
     if (!result?.ok) throw new Error(result?.error || t("inline.retryTitle"));
     if (result.target?.mode === "new" && result.data?.sessionId) {
+      activeInlineTask = { ...activeInlineTask, sessionId: result.data.sessionId, state: "running" };
+      button.dataset.loadingStartedAt = String(activeInlineTask.startedAt);
       setQuickButtonVisual(button, "push", "running");
       watchInlineTask(button, result.data.sessionId);
       delete button.dataset.errorMessage;
       renderInlineButtonMeta(button);
       return;
     }
+    activeInlineTask = null;
     setQuickButtonVisual(button, "push", "sent");
     const desc = targetDescription(result.target);
     const warning = result?.data?.warning || "";
@@ -709,6 +815,7 @@ async function sendFromInlineButton(button) {
       button.disabled = false;
     }, 1800);
   } catch (error) {
+    activeInlineTask = null;
     setQuickButtonVisual(button, "push", "error");
     button.dataset.errorMessage = error?.message || String(error);
     renderInlineButtonMeta(button);
@@ -785,16 +892,22 @@ async function ensureQuickButton(source = null) {
     if (host && wrap.parentElement !== host) host.appendChild(wrap);
   }
 
+  const activeTask = activeInlineTask?.messageKey === key ? activeInlineTask : null;
   const streaming = Boolean(source.isStreaming);
   const holding = Number(button.dataset.holdUntil || 0) > Date.now();
-  const running = button.dataset.running === "true";
-  if (!quickButtonBusy && !holding && !running) {
+  const busy = activeTask || button.dataset.state === "sending" || button.dataset.state === "running";
+  if (activeTask) {
+    button.disabled = true;
+    button.dataset.loadingStartedAt = String(activeTask.startedAt);
+    setQuickButtonVisual(button, "push", activeTask.state);
+  } else if (!busy && !quickButtonBusy && !holding) {
     button.disabled = streaming;
     setQuickButtonVisual(button, "push", streaming ? "loading" : "ready");
   }
   if (contextButtonElement) {
+    contextButtonElement.dataset.hasProject = target.projectPath ? "true" : "";
     contextButtonElement.dataset.hasSession = target.sessionId ? "true" : "";
-    contextButtonElement.disabled = !target.sessionId;
+    contextButtonElement.disabled = !target.projectPath;
     renderInlineButtonMeta(contextButtonElement);
   }
   const desc = targetDescription(target);
@@ -836,7 +949,13 @@ function schedulePublish(delay = 450) {
   timer = setTimeout(publishLatestSource, delay);
 }
 
-const observer = new MutationObserver(() => schedulePublish(streamingNow() ? 650 : 300));
+const observer = new MutationObserver((mutations) => {
+  const onlyLoaderChanges = mutations.length > 0 && mutations.every(({ target }) => {
+    const element = target.nodeType === Node.TEXT_NODE ? target.parentElement : target;
+    return element?.closest?.(".sol-codex-loader-grid, .sol-codex-loading-label, .sol-codex-loading-elapsed");
+  });
+  if (!onlyLoaderChanges) schedulePublish(streamingNow() ? 650 : 300);
+});
 observer.observe(document.documentElement, { childList: true, subtree: true, characterData: true });
 
 // Covers SPA URL/branch changes that do not reliably mutate the latest message node.
@@ -849,7 +968,7 @@ chrome.storage?.onChanged?.addListener((changes, area) => {
     renderInlineButtons();
     if (contextPopover) renderContextPopover();
   }
-  const targetKeys = new Set(["bridgeToken", "selectedProject", "selectedSessionByProject", "mode", "openApp", "projectCache", "sessionCacheByProject"]);
+  const targetKeys = new Set(["bridgeToken", "selectedProject", "selectedSessionByProject", "mode", "handoffPayloadMode", "openApp", "projectCache", "sessionCacheByProject"]);
   if (Object.keys(changes).some((key) => targetKeys.has(key))) {
     quickTargetCache = null;
     quickTargetAt = 0;
@@ -879,6 +998,12 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
   if (message?.type === "SOL_CODEX_ATTACH_IMAGE_TO_CHATGPT") {
     globalThis.SolCodexChatGPT.attachImage(message.image)
+      .then((result) => sendResponse({ ok: Boolean(result?.ok), errorCode: result?.code || null }))
+      .catch((error) => sendResponse({ ok: false, errorCode: error?.code || "ATTACH_FAILED" }));
+    return true;
+  }
+  if (message?.type === "SOL_CODEX_ATTACH_CONTEXT_FILE") {
+    globalThis.SolCodexChatGPT.attachFile(message.file)
       .then((result) => sendResponse({ ok: Boolean(result?.ok), errorCode: result?.code || null }))
       .catch((error) => sendResponse({ ok: false, errorCode: error?.code || "ATTACH_FAILED" }));
     return true;

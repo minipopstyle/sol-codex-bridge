@@ -7,7 +7,8 @@ export const DEFAULT_MAX_FILE_BYTES = 1 * 1024 * 1024;
 export const ABSOLUTE_MAX_FILE_BYTES = 4 * 1024 * 1024;
 
 const blockedDirectoryNames = new Set([
-  ".git", "node_modules", ".ssh", "dist", "build", ".next", "coverage", ".cache"
+  ".git", "node_modules", ".ssh", "dist", "build", "out", ".next", ".nuxt", ".svelte-kit", "coverage", ".cache",
+  ".tmp", "temp", "tmp", ".vscode", ".idea", "__pycache__", ".pytest_cache", ".sol-codex-bridge"
 ]);
 
 function guardError(message, status = 403, code = "CONTEXT_READ_BLOCKED") {
@@ -35,11 +36,20 @@ function relativePathFor(root, target) {
   return path.relative(root, target).split(path.sep).join("/");
 }
 
-export function isBlockedRelativePath(relativePath) {
+export function isLowValueRelativePath(relativePath) {
   const value = String(relativePath || "").replaceAll("\\", "/").replace(/^\.\//, "");
   const segments = value.split("/").filter(Boolean);
-  const name = segments.at(-1) || "";
+  const name = (segments.at(-1) || "").toLocaleLowerCase();
   if (segments.some((segment) => blockedDirectoryNames.has(segment))) return true;
+  if (name === ".ds_store" || name === "thumbs.db" || name === "desktop.ini") return true;
+  if (/\.(?:log|tmp|temp|swp|swo|map)$/i.test(name)) return true;
+  return false;
+}
+
+export function isBlockedRelativePath(relativePath) {
+  const value = String(relativePath || "").replaceAll("\\", "/").replace(/^\.\//, "");
+  const name = (value.split("/").filter(Boolean).at(-1) || "").toLocaleLowerCase();
+  if (isLowValueRelativePath(value)) return true;
   if (name === ".env" || name.startsWith(".env.")) return true;
   if (/\.(?:pem|key)$/i.test(name)) return true;
   if (name === "id_rsa" || name === "id_ed25519") return true;
@@ -116,24 +126,32 @@ export function readPermission(projectPath) {
   return { projectPath: root || String(projectPath || ""), allowed: root ? isReadAllowed(root) : false };
 }
 
-export function walkReadableFiles(projectPath, maxFiles = 5000) {
+export function walkReadableFiles(projectPath, maxFiles = 5000, { countAll = false } = {}) {
   const root = assertContextReadable(projectPath);
   const files = [];
+  let totalFiles = 0;
   const stack = [root];
-  while (stack.length && files.length < maxFiles) {
+  while (stack.length && (countAll || files.length < maxFiles)) {
     const current = stack.pop();
     let entries;
     try { entries = fs.readdirSync(current, { withFileTypes: true }); } catch { continue; }
     entries.sort((a, b) => a.name.localeCompare(b.name));
     for (const entry of entries) {
-      if (files.length >= maxFiles) break;
+      if (!countAll && files.length >= maxFiles) break;
       const full = path.join(current, entry.name);
       if (entry.isSymbolicLink()) continue;
       const relative = relativePathFor(root, full);
       if (isBlockedRelativePath(relative)) continue;
       if (entry.isDirectory()) stack.push(full);
-      else if (entry.isFile()) files.push({ full, relativePath: relative });
+      else if (entry.isFile()) {
+        totalFiles += 1;
+        if (files.length < maxFiles) {
+          let size = null;
+          try { size = fs.statSync(full).size; } catch {}
+          files.push({ full, relativePath: relative, size });
+        }
+      }
     }
   }
-  return { root, files, truncated: stack.length > 0 };
+  return { root, files, totalFiles: countAll ? totalFiles : files.length, truncated: stack.length > 0 || totalFiles > files.length };
 }

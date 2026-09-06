@@ -108,6 +108,9 @@ assert.doesNotMatch(cliSource, /tell application ["']Terminal["']/);
 assert.doesNotMatch(cliSource, /do script/);
 assert.match(cliSource, /function queueViaCli/);
 assert.match(serverSource, /launched\.finished\.then/);
+assert.doesNotMatch(serverSource, /openNewSessionEarly|setTimeout\(tryOpen/);
+assert.doesNotMatch(serverSource, /setTimeout\(\(\) => \{ try \{ openProjectInCodex/);
+assert.match(serverSource, /desktop open after completion/);
 assert.doesNotMatch(serverSource, /launched\.ready/);
 assert.doesNotMatch(serverSource, /Access-Control-Allow-Origin/);
 const desktopSource = fs.readFileSync(new URL("./lib/codex-desktop.mjs", import.meta.url), "utf8");
@@ -245,7 +248,7 @@ if (TestDatabaseSync) {
   verifyDb.close();
 }
 
-// v0.2.11 read-only Context bridge coverage.
+// v0.2.12 read-only Context bridge coverage.
 const trackedFile = path.join(project, "bridge.js");
 const outsideFile = path.join(temp, "outside-secret.txt");
 fs.writeFileSync(trackedFile, "function queueToSession() { return true; }\n");
@@ -258,6 +261,11 @@ const tinyPng = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0l
 fs.writeFileSync(path.join(project, "image.png"), Buffer.concat([tinyPng, Buffer.alloc(1_500_000 - tinyPng.length)]));
 fs.writeFileSync(path.join(project, "fake.png"), Buffer.from("not an image\n"));
 fs.writeFileSync(path.join(project, "huge.png"), Buffer.concat([tinyPng, Buffer.alloc(8 * 1024 * 1024)]));
+fs.writeFileSync(path.join(project, ".DS_Store"), "noise\n");
+fs.writeFileSync(path.join(project, "debug.log"), "noise\n");
+fs.writeFileSync(path.join(project, "source.map"), "{}\n");
+fs.mkdirSync(path.join(project, "tmp", "nested"), { recursive: true });
+fs.writeFileSync(path.join(project, "tmp", "nested", "ignored.js"), "ignored\n");
 fs.mkdirSync(path.join(project, "extension"), { recursive: true });
 fs.writeFileSync(path.join(project, "extension", "content.js"), "const bridge = true;\n");
 fs.writeFileSync(path.join(project, "empty.txt"), "");
@@ -268,6 +276,41 @@ const gitInit = spawnSync("git", ["init", "-q", project], { encoding: "utf8" });
 assert.equal(gitInit.status, 0, gitInit.stderr);
 assert.equal(spawnSync("git", ["-C", project, "add", "bridge.js"], { encoding: "utf8" }).status, 0);
 assert.equal(spawnSync("git", ["-C", project, "-c", "user.name=Bridge Test", "-c", "user.email=bridge@test", "commit", "-qm", "baseline"], { encoding: "utf8" }).status, 0);
+
+// Large Sol payloads become readable project-local artifacts and deduplicate.
+const handoffScript = `
+  const fs = await import("node:fs");
+  const payload = await import(${JSON.stringify(new URL("./lib/handoff-payload.mjs", import.meta.url).href)});
+  const small = payload.prepareHandoffPayload({ text: "small prompt", projectPath: ${JSON.stringify(project)} });
+  const largeText = "# Large handoff\\n\\n" + "x".repeat(80 * 1024);
+  const large = payload.prepareHandoffPayload({ text: largeText, projectPath: ${JSON.stringify(project)}, sessionId: "01a-test-session", source: { type: "chatgpt" } });
+  const repeated = payload.prepareHandoffPayload({ text: largeText, projectPath: ${JSON.stringify(project)}, sessionId: "01a-test-session", source: { type: "chatgpt" } });
+  const file = fs.readFileSync(large.artifact.path, "utf8");
+  const stat = fs.statSync(large.artifact.path);
+  console.log(JSON.stringify({
+    small: { mode: small.mode, text: small.inlineText },
+    large: { mode: large.mode, prompt: large.codexPrompt, artifact: large.artifact, file, modeBits: stat.mode & 0o777 },
+    repeated: { mode: repeated.mode, path: repeated.artifact.path, reused: repeated.artifact.reused }
+  }));
+`;
+const handoffChild = spawnSync(process.execPath, ["--input-type=module", "-e", handoffScript], {
+  env: { ...process.env, SOL_CODEX_BRIDGE_HOME: path.join(temp, ".bridge-handoff"), SOL_CODEX_HANDOFF_FORCE_PROJECT: "1" },
+  encoding: "utf8"
+});
+assert.equal(handoffChild.status, 0, handoffChild.stderr);
+const handoffData = JSON.parse(handoffChild.stdout.trim());
+assert.deepEqual(handoffData.small, { mode: "inline", text: "small prompt" });
+assert.equal(handoffData.large.mode, "artifact");
+assert.match(handoffData.large.prompt, /请先完整读取该文件/);
+assert.match(handoffData.large.file, /^---\nschema: sol-codex-handoff\/v1/m);
+assert.match(handoffData.large.file, /# Large handoff/);
+assert.equal(handoffData.large.modeBits, 0o600);
+assert.equal(handoffData.large.artifact.storage, "project");
+assert.match(handoffData.large.artifact.relativePath, /^\.sol-codex-bridge\/handoffs\//);
+assert.equal(handoffData.repeated.path, handoffData.large.artifact.path);
+assert.equal(handoffData.repeated.reused, true);
+assert.match(fs.readFileSync(path.join(project, ".git", "info", "exclude"), "utf8"), /^\.sol-codex-bridge\/$/m);
+
 fs.appendFileSync(trackedFile, "// changed\n");
 fs.appendFileSync(session, [
   JSON.stringify({ timestamp: "2026-09-01T10:00:02Z", payload: { type: "message", role: "assistant", content: "已检查项目结构" } }),
@@ -297,6 +340,7 @@ const contextScript = `
   const diff = files.getGitDiff(${JSON.stringify(project)});
   const snapshot = bundle.buildSessionSnapshot({ projectPath: ${JSON.stringify(project)}, sessionId });
   const context = bundle.buildContextBundle({ projectPath: ${JSON.stringify(project)}, sessionId, parts: ["snapshot", "transcript", "git"], options: { transcriptMessages: 4 } });
+  const projectContext = bundle.buildContextBundle({ projectPath: ${JSON.stringify(project)}, workspaceRoot: ${JSON.stringify(temp)}, profile: "project", parts: ["project", "environment", "git"], options: { maxBytes: 1_000 } });
   const listed = projectFiles.listProjectDirectory(${JSON.stringify(project)});
   const nested = projectFiles.listProjectDirectory(${JSON.stringify(project)}, "extension");
   const preview = projectFiles.readProjectFile(${JSON.stringify(project)}, "extension/content.js");
@@ -331,6 +375,7 @@ const contextScript = `
     tail, page2, head, status, diff,
     snapshot: { task: snapshot.task, actions: snapshot.recentActions, changedFiles: snapshot.changedFiles, errors: snapshot.errors, text: snapshot.text },
     context: { text: context.text, hasGit: Boolean(context.context.git), hasTranscript: Boolean(context.context.transcript) },
+    projectContext: { text: projectContext.text, file: projectContext.file, profile: projectContext.context.project, environment: projectContext.context.environment, workspaceRoot: projectContext.context.workspaceRoot, projectRoot: projectContext.context.projectRoot, session: projectContext.context.session, limits: projectContext.limits },
     permissionOff, ledgerRecord
   }));
 `;
@@ -355,6 +400,7 @@ assert.equal(contextData.binary.code, "BINARY_FILE");
 assert.equal(contextData.large.code, "FILE_TOO_LARGE");
 assert.ok(contextData.listed.entries.some((item) => item.name === "extension" && item.type === "directory"));
 assert.ok(!contextData.listed.entries.some((item) => item.name === "node_modules"), "ignored directory leaked into listing");
+assert.ok(!contextData.listed.entries.some((item) => [".DS_Store", "debug.log", "source.map", "tmp"].includes(item.name)), "low-value path leaked into listing");
 assert.equal(contextData.nested.entries[0].name, "content.js");
 assert.equal(contextData.preview.content, "const bridge = true;\n");
 assert.equal(contextData.empty.content, "");
@@ -393,15 +439,38 @@ assert.ok(contextData.snapshot.errors.some((item) => item.includes("error")));
 assert.doesNotMatch(contextData.snapshot.text, /this must stay hidden/);
 assert.match(contextData.context.text, /\[Sol → Codex Local Context\]/);
 assert.ok(contextData.context.hasGit && contextData.context.hasTranscript);
+assert.match(contextData.projectContext.text, /\[Sol Project Context\]/);
+assert.equal(contextData.projectContext.session, null);
+assert.ok(contextData.projectContext.profile.stats.files >= contextData.projectContext.profile.stats.indexedFiles);
+assert.ok(contextData.projectContext.profile.structure.includes("bridge.js"));
+assert.ok(!contextData.projectContext.profile.structure.includes(".env"));
+assert.ok(!contextData.projectContext.profile.structure.includes(".DS_Store"));
+assert.ok(!contextData.projectContext.profile.structure.includes("tmp/nested/ignored.js"));
+const relevantBridge = contextData.projectContext.profile.relevantFiles.find((item) => item.path === "bridge.js");
+assert.ok(relevantBridge && relevantBridge.score >= 100 && relevantBridge.reasons.includes("git-changed"));
+assert.equal(contextData.projectContext.environment.codex.found, false);
+assert.equal(contextData.projectContext.workspaceRoot, temp);
+assert.equal(contextData.projectContext.projectRoot, normalizedProject);
+assert.match(contextData.projectContext.file.filename, /^Sol-Project-Context_[^/]+_\d{4}-\d{2}-\d{2}-\d{4}\.md$/);
+assert.equal(contextData.projectContext.file.mimeType, "text/markdown");
+assert.match(contextData.projectContext.file.text, /^---\nschema: sol-project-context\/v2/m);
+assert.doesNotMatch(contextData.projectContext.text, new RegExp(project.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+assert.doesNotMatch(contextData.projectContext.file.text, new RegExp(project.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+assert.ok(contextData.projectContext.limits.truncated);
+assert.ok(contextData.projectContext.limits.truncatedSections.length > 0);
 assert.equal(contextData.permissionOff.status, 403);
 assert.ok(contextData.ledgerRecord.handoffId && !Object.prototype.hasOwnProperty.call(contextData.ledgerRecord, "text"));
-assert.match(serverSource, /bridgeVersion: "0\.2\.11"/);
+assert.match(serverSource, /bridgeVersion: "0\.2\.12"/);
 
 const apiPort = 37920 + (process.pid % 100);
 const bridgeProcess = spawn(process.execPath, ["server.mjs"], {
   cwd: path.dirname(new URL(import.meta.url).pathname),
   env: {
     ...process.env,
+    CODEX_BIN: newBin,
+    SOL_CODEX_EXTRA_BINS: newBin,
+    SOL_CODEX_FORCE_BIN: "1",
+    SOL_CODEX_HANDOFF_FORCE_PROJECT: "1",
     CODEX_HOME: codexHome,
     CODEX_SQLITE_HOME: path.join(temp, "missing-api"),
     SOL_CODEX_BRIDGE_HOME: path.join(temp, ".bridge-context"),
@@ -439,7 +508,7 @@ try {
   };
   const health = await api("/api/health", {}, false);
   assert.equal(health.status, 200);
-  assert.equal(health.data.bridgeVersion, "0.2.11");
+  assert.equal(health.data.bridgeVersion, "0.2.12");
   const unauthenticatedFiles = await api(`/api/project-files?${new URLSearchParams({ project, path: "" })}`, {}, false);
   assert.equal(unauthenticatedFiles.status, 401);
   const permission = await api(`/api/context/permission?project=${encodeURIComponent(project)}`);
@@ -479,6 +548,28 @@ try {
   const apiBundle = await api("/api/context/bundle", { method: "POST", body: JSON.stringify({ projectPath: project, sessionId: "01a-test-session", parts: ["snapshot", "transcript", "git"] }) });
   assert.equal(apiBundle.status, 200);
   assert.match(apiBundle.data.text, /\[Sol → Codex Local Context\]/);
+  const apiProjectBundle = await api("/api/context/bundle", { method: "POST", body: JSON.stringify({ projectPath: project, profile: "project" }) });
+  assert.equal(apiProjectBundle.status, 200);
+  assert.match(apiProjectBundle.data.text, /\[Sol Project Context\]/);
+  assert.ok(apiProjectBundle.data.context.project.stats.files >= apiProjectBundle.data.context.project.stats.indexedFiles);
+  assert.equal(apiProjectBundle.data.context.session, null);
+
+  const longPrompt = `# API handoff\n\n${"x".repeat(80 * 1024)}`;
+  const sendBody = { mode: "queue", projectPath: project, sessionId: "01a-test-session", prompt: longPrompt, source: { type: "chatgpt", conversationId: "api-chat", revision: 1, contentHash: "api-hash" }, openApp: false };
+  const apiHandoff = await api("/api/actions/send", { method: "POST", body: JSON.stringify(sendBody) });
+  assert.equal(apiHandoff.status, 200, JSON.stringify(apiHandoff));
+  assert.equal(apiHandoff.data.payload.mode, "artifact");
+  assert.match(apiHandoff.data.payload.artifact.relativePath, /^\.sol-codex-bridge\/handoffs\//);
+  const artifactPath = path.join(project, apiHandoff.data.payload.artifact.relativePath);
+  assert.match(fs.readFileSync(artifactPath, "utf8"), /# API handoff/);
+  const apiRepeat = await api("/api/actions/send", { method: "POST", body: JSON.stringify(sendBody) });
+  assert.equal(apiRepeat.status, 200);
+  assert.equal(apiRepeat.data.payload.artifact.relativePath, apiHandoff.data.payload.artifact.relativePath);
+  assert.equal(apiRepeat.data.payload.artifact.reused, true);
+  const apiInline = await api("/api/actions/send", { method: "POST", body: JSON.stringify({ ...sendBody, prompt: "short API handoff", source: { type: "chatgpt", contentHash: "short" } }) });
+  assert.equal(apiInline.status, 200);
+  assert.equal(apiInline.data.payload.mode, "inline");
+  assert.doesNotMatch(spawnSync("git", ["-C", project, "status", "--porcelain"], { encoding: "utf8" }).stdout, /\.sol-codex-bridge/);
 } finally {
   bridgeProcess.kill();
 }

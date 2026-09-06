@@ -54,15 +54,20 @@ function parseStatus(output) {
   if (branch?.startsWith("Initial commit on ")) branch = branch.slice("Initial commit on ".length).trim();
   const changedFiles = [];
   const stagedFiles = [];
+  const changedFilesRaw = [];
+  const stagedFilesRaw = [];
   for (const line of lines) {
     if (line.startsWith("## ") || line.length < 4) continue;
     const code = line.slice(0, 2);
     const file = decodePorcelainPath(line.slice(3));
-    if (!file || isBlockedRelativePath(file)) continue;
+    if (!file) continue;
+    if (!changedFilesRaw.includes(file)) changedFilesRaw.push(file);
+    if (code[0] && code[0] !== "?" && !stagedFilesRaw.includes(file)) stagedFilesRaw.push(file);
+    if (isBlockedRelativePath(file)) continue;
     if (!changedFiles.includes(file)) changedFiles.push(file);
     if (code[0] && code[0] !== "?") stagedFiles.push(file);
   }
-  return { branch, changedFiles, stagedFiles };
+  return { branch, changedFiles, stagedFiles, changedFilesRaw, stagedFilesRaw };
 }
 
 export function getGitStatus(projectPath) {
@@ -71,7 +76,7 @@ export function getGitStatus(projectPath) {
   if (cached && Date.now() - cached.at < GIT_TTL_MS && cached.status) return clone(cached.status);
   try {
     const status = parseStatus(gitText(root, ["status", "--porcelain=v1", "--branch"]));
-    const result = { isGitRepo: true, ...status };
+    const result = { isGitRepo: true, ...status, changedReadableFiles: status.changedFiles };
     gitCache.set(root, { ...(cached || {}), at: Date.now(), status: result });
     return clone(result);
   } catch {
@@ -98,11 +103,11 @@ function filterDiff(value) {
 
 export function getGitDiff(projectPath, { maxBytes = DEFAULT_DIFF_BYTES } = {}) {
   const root = assertContextReadable(projectPath);
+  const limit = Math.min(Math.max(1, Number(maxBytes) || DEFAULT_DIFF_BYTES), MAX_DIFF_BYTES);
   const cached = gitCache.get(root);
-  if (cached && Date.now() - cached.at < GIT_TTL_MS && cached.diff) return clone(cached.diff);
+  if (cached && Date.now() - cached.at < GIT_TTL_MS && cached.diff && cached.diffLimit === limit) return clone(cached.diff);
   const status = getGitStatus(root);
   if (!status.isGitRepo) return status;
-  const limit = Math.min(Math.max(1, Number(maxBytes) || DEFAULT_DIFF_BYTES), MAX_DIFF_BYTES);
   try {
     const working = truncateUtf8(filterDiff(gitText(root, ["diff", "--no-ext-diff", "--no-color"])), limit);
     const staged = truncateUtf8(filterDiff(gitText(root, ["diff", "--cached", "--no-ext-diff", "--no-color"])), limit);
@@ -110,12 +115,15 @@ export function getGitDiff(projectPath, { maxBytes = DEFAULT_DIFF_BYTES } = {}) 
       isGitRepo: true,
       branch: status.branch,
       changedFiles: status.changedFiles,
+      changedReadableFiles: status.changedFiles,
       stagedFiles: status.stagedFiles,
+      changedFilesRaw: status.changedFilesRaw,
+      stagedFilesRaw: status.stagedFilesRaw,
       diff: working.text,
       stagedDiff: staged.text,
       truncated: working.truncated || staged.truncated
     };
-    gitCache.set(root, { at: Date.now(), status, diff: result });
+    gitCache.set(root, { at: Date.now(), status, diff: result, diffLimit: limit });
     return clone(result);
   } catch {
     return {

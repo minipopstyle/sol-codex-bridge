@@ -1,13 +1,10 @@
 import fs from "node:fs";
 import path from "node:path";
-import { assertContextReadable, isSubpath } from "./workspace-guard.mjs";
+import { assertContextReadable, isBlockedRelativePath, isLowValueRelativePath, isSubpath } from "./workspace-guard.mjs";
 
 export const MAX_TEXT_BYTES = 512 * 1024;
 export const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 
-const ignoredDirectoryNames = new Set([
-  ".git", "node_modules", ".next", "dist", "build", "coverage", ".cache", ".vite", ".turbo", "vendor", ".ssh"
-]);
 const binaryExtensions = new Set([
   ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".pdf", ".zip", ".gz", ".tar", ".tgz", ".dmg", ".sqlite", ".db",
   ".mp3", ".mp4", ".mov", ".woff", ".woff2", ".ttf", ".otf", ".dylib", ".so", ".bin"
@@ -26,10 +23,6 @@ function fileError(message, status, code) {
 
 function relativePathFor(root, target) {
   return path.relative(root, target).split(path.sep).join("/");
-}
-
-function isIgnoredDirectory(relativePath) {
-  return String(relativePath || "").split("/").some((part) => ignoredDirectoryNames.has(part));
 }
 
 export function isSensitiveFile(relativePath) {
@@ -89,7 +82,7 @@ function resolveExisting(projectPath, relativePath, { allowRoot = false } = {}) 
   try { target = fs.realpathSync(candidate); } catch { throw fileError("项目文件或目录不存在", 404, "PATH_NOT_FOUND"); }
   if (!isSubpath(root, target)) throw fileError("读取路径超出项目目录", 403, "PATH_TRAVERSAL_BLOCKED");
   const relative = relativePathFor(root, target);
-  if (isIgnoredDirectory(relative)) throw fileError("该目录默认不提供浏览", 403, "IGNORED_DIRECTORY");
+  if (isLowValueRelativePath(relative)) throw fileError("该目录默认不提供浏览", 403, "IGNORED_DIRECTORY");
   return { root, target, relativePath: relative };
 }
 
@@ -107,7 +100,7 @@ function metadata(root, target, relativePath, stat, extra = {}) {
 function entryMetadata(root, directory, entry) {
   const fullPath = path.join(directory, entry.name);
   const relativePath = relativePathFor(root, fullPath);
-  if (!entry.isSymbolicLink() && entry.isDirectory() && ignoredDirectoryNames.has(entry.name)) return null;
+  if (isLowValueRelativePath(relativePath)) return null;
 
   let target = fullPath;
   let stat;
@@ -115,7 +108,7 @@ function entryMetadata(root, directory, entry) {
   if (entry.isSymbolicLink()) {
     symlink = true;
     try { target = fs.realpathSync(fullPath); } catch { return { name: entry.name, path: relativePath, type: "symlink", blocked: true }; }
-    if (!isSubpath(root, target) || isIgnoredDirectory(relativePathFor(root, target))) {
+    if (!isSubpath(root, target) || isBlockedRelativePath(relativePathFor(root, target))) {
       return { name: entry.name, path: relativePath, type: "symlink", symlink: true, blocked: true };
     }
   }

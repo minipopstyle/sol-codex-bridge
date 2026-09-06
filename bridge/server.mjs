@@ -27,6 +27,8 @@ import { getGitDiff, searchProject, readProjectFile } from "./lib/project-contex
 import { listProjectDirectory, readProjectFile as readProjectPreview, readProjectFileData } from "./lib/project-files.mjs";
 import { isReadAllowed, readPermission, setReadPermission } from "./lib/workspace-guard.mjs";
 import { appendHandoff } from "./lib/handoff-ledger.mjs";
+import { prepareHandoffPayload } from "./lib/handoff-payload.mjs";
+import { cleanupHandoffArtifacts } from "./lib/handoff-artifact.mjs";
 
 const HOST = "127.0.0.1";
 const PORT = Number(process.env.SOL_CODEX_BRIDGE_PORT || 37821);
@@ -34,8 +36,8 @@ const TOKEN = getOrCreateToken();
 const startedAt = Date.now();
 const newTaskStates = new Map();
 
-function recordHandoff(source, projectPath, sessionId, transport) {
-  try { appendHandoff({ source, projectPath, sessionId, transport }); }
+function recordHandoff(source, projectPath, sessionId, transport, payload) {
+  try { appendHandoff({ source, projectPath, sessionId, transport, payload }); }
   catch (error) { console.error(`[HandoffLedger] ${error?.message || error}`); }
 }
 
@@ -44,6 +46,7 @@ const stateInit = initializeStateIndex();
 startStateIndexWatcher();
 let codexSnapshot = getCodexInfo({ fresh: true });
 const desktopApp = findCodexDesktopApp();
+try { cleanupHandoffArtifacts(); } catch (error) { console.error(`[HandoffArtifacts] ${error?.message || error}`); }
 
 function json(res, status, payload) {
   const body = JSON.stringify(payload);
@@ -89,7 +92,7 @@ async function handle(req, res) {
     return json(res, 200, {
       ok: true,
       authRequired: true,
-      bridgeVersion: "0.2.11",
+      bridgeVersion: "0.2.12",
       uptimeMs: Date.now() - startedAt,
       codex: codexSnapshot,
       desktop: { found: Boolean(desktopApp) },
@@ -201,7 +204,16 @@ async function handle(req, res) {
 
   if (req.method === "POST" && url.pathname === "/api/context/bundle") {
     const body = await readBody(req);
-    return json(res, 200, buildContextBundle(body));
+    return json(res, 200, buildContextBundle({
+      ...body,
+      runtimeInfo: {
+        found: Boolean(codexSnapshot?.found),
+        version: codexSnapshot?.version || null,
+        source: codexSnapshot?.source || null,
+        capabilities: codexSnapshot?.capabilities || {},
+        desktop: { found: Boolean(desktopApp) }
+      }
+    }));
   }
 
   if (req.method === "GET" && url.pathname === "/api/actions/task-status") {
@@ -241,27 +253,59 @@ async function handle(req, res) {
     const sessionId = body.sessionId ? String(body.sessionId) : "";
     const prompt = ensurePrompt(body.prompt);
     const source = body.source && typeof body.source === "object" ? body.source : null;
+    const handoffStartedAt = Date.now();
+    const payload = prepareHandoffPayload({
+      text: prompt,
+      projectPath,
+      sessionId,
+      source,
+      forceMode: body.payloadMode || body.forceMode || "auto"
+    });
+    const codexPrompt = payload.codexPrompt;
+    const payloadInfo = {
+      mode: payload.mode,
+      originalBytes: payload.originalBytes,
+      artifact: payload.artifact ? {
+        filename: payload.artifact.filename,
+        relativePath: payload.artifact.relativePath,
+        format: payload.artifact.format,
+        mimeType: payload.artifact.mimeType,
+        bytes: payload.artifact.bytes,
+        sha256: payload.artifact.sha256,
+        reused: payload.artifact.reused
+      } : null
+    };
 
     if (mode === "new") {
-      const launched = await launchNewTask(projectPath, prompt);
-      recordHandoff(source, projectPath, launched.sessionId, launched.transport);
+      console.log(`[Handoff New] payload prepared ${Date.now() - handoffStartedAt}ms`);
+      const launched = await launchNewTask(projectPath, codexPrompt);
+      console.log(`[Handoff New] thread started ${Date.now() - handoffStartedAt}ms`);
+      recordHandoff(source, projectPath, launched.sessionId, launched.transport, payload);
       newTaskStates.set(launched.sessionId, { known: true, running: true, completed: false });
       launched.finished.then((success) => {
+        console.log(`[Handoff New] task completed ${Date.now() - handoffStartedAt}ms success=${success}`);
         newTaskStates.set(launched.sessionId, { known: true, running: false, completed: true, success });
         setTimeout(() => newTaskStates.delete(launched.sessionId), 30 * 60_000).unref?.();
       });
       if (body.openApp) {
         launched.finished.then((completed) => {
           if (!completed) return;
-          try { openSessionInCodex(launched.sessionId); }
-          catch (error) { console.error(`[NewTask Open] ${error?.message || error}`); }
-        });
+          try {
+            openSessionInCodex(launched.sessionId);
+            console.log(`[Handoff New] desktop open after completion ${Date.now() - handoffStartedAt}ms`);
+          } catch (error) {
+            console.error(`[NewTask Open] ${error?.message || error}`);
+          }
+        }).catch(() => {});
       }
       return json(res, 200, {
         ok: true,
-        message: body.openApp ? "已创建 Codex 新任务，后台完成并释放会话后将自动打开" : "已创建并发送到 Codex 新任务",
+        accepted: true,
+        running: true,
+        message: payload.mode === "artifact" ? "已作为 Markdown 上下文发送到 Codex" : body.openApp ? "已创建 Codex 新任务，完成后切换到 Codex 会话" : "已创建并发送到 Codex 新任务",
         transport: launched.transport,
         sessionId: launched.sessionId,
+        payload: payloadInfo,
         source
       });
     }
@@ -279,8 +323,8 @@ async function handle(req, res) {
           openWarning = error?.message || String(error);
         }
       }
-      const queued = await queueToSession(sessionId, prompt, { projectPath });
-      recordHandoff(source, projectPath, sessionId, queued.transport);
+      const queued = await queueToSession(sessionId, codexPrompt, { projectPath });
+      recordHandoff(source, projectPath, sessionId, queued.transport, payload);
 
       const via = queued.transport === "state-db-queue"
         ? "Codex 本地持久队列"
@@ -289,7 +333,7 @@ async function handle(req, res) {
         : queued.transport === "codex-queue"
           ? "Codex Queue"
           : "Codex app-server daemon";
-      const baseMessage = `方案已加入已有 Codex 会话（${via}）`;
+      const baseMessage = payload.mode === "artifact" ? "已作为 Markdown 上下文发送到 Codex" : `方案已加入已有 Codex 会话（${via}）`;
       return json(res, 200, {
         ok: true,
         message: openWarning ? `${baseMessage}，但自动切换会话失败` : baseMessage,
@@ -301,16 +345,14 @@ async function handle(req, res) {
         openWarning,
         warning: queued.warning || null,
         configIssue: queued.configIssue || null,
+        payload: payloadInfo,
         source
       });
     }
 
     if (mode === "fork") {
       if (!sessionId) return json(res, 400, { error: "请选择已有会话" });
-      launchForkTask(projectPath, sessionId, prompt);
-      if (body.openApp) {
-        setTimeout(() => { try { openProjectInCodex(projectPath); } catch {} }, 700);
-      }
+      launchForkTask(projectPath, sessionId, codexPrompt);
       return json(res, 200, { ok: true, message: "已基于现有会话派生新的 Codex 任务", source });
     }
 
@@ -342,7 +384,7 @@ server.on("error", (error) => {
 
 server.listen(PORT, HOST, () => {
   const state = getStateIndexInfo();
-  console.log("Sol → Codex Local Bridge v0.2.11");
+  console.log("Sol → Codex Local Bridge v0.2.12");
   console.log(`Listening: http://${HOST}:${PORT}`);
   console.log(`Codex: ${codexSnapshot.version || "NOT FOUND"}`);
   console.log(`State DB: ${state.stateDb || "fallback to JSONL"}`);
