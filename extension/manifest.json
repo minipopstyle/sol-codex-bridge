@@ -1,8 +1,14 @@
 {
   "manifest_version": 3,
   "name": "Sol ↔ Codex Local Bridge",
-  "version": "0.2.12",
+  "version": "0.2.13",
   "description": "Bridge ChatGPT and local Codex projects, sessions, Git context, and read-only project files.",
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
   "permissions": [
     "activeTab",
     "storage",
@@ -25,6 +31,7 @@
       ],
       "js": [
         "i18n.js",
+        "context-actions.js",
         "project-files-client.js",
         "project-files.js",
         "chatgpt-insert.js",
@@ -40,6 +47,13 @@
     "default_path": "sidepanel.html"
   },
   "action": {
-    "default_title": "Sol ↔ Codex"
+    "default_title": "Sol ↔ Codex",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "24": "icons/icon24.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
   }
 }

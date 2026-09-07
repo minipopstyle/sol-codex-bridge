@@ -1,4 +1,4 @@
-importScripts("i18n.js");
+importScripts("i18n.js", "context-actions.js");
 
 const i18n = globalThis.SolCodexI18n;
 const t = (...args) => i18n.t(...args);
@@ -60,7 +60,7 @@ async function getCachedState() {
     "selectedProject",
     "selectedSessionByProject",
     "mode",
-    "handoffPayloadMode",
+    "transferMode", "handoffPayloadMode",
     "openApp",
     "chatgptSourceByTab",
     "chatgptRevisionStateByConversation",
@@ -187,7 +187,7 @@ async function markSent(source) {
 
 async function getQuickTarget() {
   const saved = await chrome.storage.local.get([
-    "bridgeToken", "selectedProject", "selectedSessionByProject", "mode", "handoffPayloadMode", "openApp",
+    "bridgeToken", "selectedProject", "selectedSessionByProject", "mode", "transferMode", "handoffPayloadMode", "openApp",
     "projectCache", "sessionCacheByProject"
   ]);
   const projectPath = String(saved.selectedProject || "");
@@ -199,7 +199,7 @@ async function getQuickTarget() {
   return {
     ready,
     mode,
-    payloadMode: ["inline", "artifact", "auto"].includes(saved.handoffPayloadMode) ? saved.handoffPayloadMode : "auto",
+    transferMode: globalThis.SolCodexContextActions.normalizeTransferMode(saved.transferMode ?? saved.handoffPayloadMode),
     projectPath,
     projectName: project?.name || (projectPath ? projectPath.split(/[\\/]/).filter(Boolean).pop() : ""),
     sessionId: sessionId || null,
@@ -238,7 +238,7 @@ async function quickSend(raw, sender) {
       sessionId: target.sessionId,
       prompt: source.text,
       source,
-      payloadMode: target.payloadMode,
+      transferMode: target.transferMode,
       openApp: target.openApp
     })
   });

@@ -259,11 +259,12 @@ async function handle(req, res) {
       projectPath,
       sessionId,
       source,
-      forceMode: body.payloadMode || body.forceMode || "auto"
+      transferMode: body.transferMode || body.payloadMode || body.forceMode || "auto"
     });
     const codexPrompt = payload.codexPrompt;
     const payloadInfo = {
       mode: payload.mode,
+      transferMode: payload.transferMode,
       originalBytes: payload.originalBytes,
       artifact: payload.artifact ? {
         filename: payload.artifact.filename,
@@ -302,7 +303,7 @@ async function handle(req, res) {
         ok: true,
         accepted: true,
         running: true,
-        message: payload.mode === "artifact" ? "已作为 Markdown 上下文发送到 Codex" : body.openApp ? "已创建 Codex 新任务，完成后切换到 Codex 会话" : "已创建并发送到 Codex 新任务",
+        message: payload.transferMode === "file" ? "已作为 Markdown 上下文发送到 Codex" : body.openApp ? "已创建 Codex 新任务，完成后切换到 Codex 会话" : "已创建并发送到 Codex 新任务",
         transport: launched.transport,
         sessionId: launched.sessionId,
         payload: payloadInfo,
@@ -333,7 +334,7 @@ async function handle(req, res) {
         : queued.transport === "codex-queue"
           ? "Codex Queue"
           : "Codex app-server daemon";
-      const baseMessage = payload.mode === "artifact" ? "已作为 Markdown 上下文发送到 Codex" : `方案已加入已有 Codex 会话（${via}）`;
+      const baseMessage = payload.transferMode === "file" ? "已作为 Markdown 上下文发送到 Codex" : `方案已加入已有 Codex 会话（${via}）`;
       return json(res, 200, {
         ok: true,
         message: openWarning ? `${baseMessage}，但自动切换会话失败` : baseMessage,

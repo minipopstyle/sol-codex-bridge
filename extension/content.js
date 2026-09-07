@@ -237,6 +237,9 @@ async function pullContext(kind) {
   state.kind = kind;
   state.loading = true;
   state.error = "";
+  state.file = null;
+  state.sendBusy = false;
+  state.sent = false;
   renderContextPopover();
   try {
     const { target } = state;
@@ -255,6 +258,7 @@ async function pullContext(kind) {
     if (kind === "transcript") data = await contextRequest({ type: "SOL_CODEX_CONTEXT_SESSION", projectPath: target.projectPath, sessionId: target.sessionId, maxMessages: 60 });
     if (kind === "git") data = await contextRequest({ type: "SOL_CODEX_CONTEXT_GIT", projectPath: target.projectPath });
     state.text = kind === "git" ? contextGitText(data) : String(data?.text || "");
+    state.file = kind === "project" ? data?.file || null : null;
     state.capturedAt = data?.capturedAt || data?.session?.updatedAt || data?.updatedAt || Date.now();
     if (contextState === state) setQuickButtonVisual(state.button, "pull", "loaded");
   } catch (error) {
@@ -293,8 +297,8 @@ function fileController(state) {
     client: globalThis.SolCodexProjectFilesClient,
     button: contextButton,
     render: renderContextPopover,
-    insertText: (text) => globalThis.SolCodexChatGPT.insertText(text),
-    attachImage: (image) => globalThis.SolCodexChatGPT.attachImage(image)
+    attachImage: (image) => globalThis.SolCodexChatGPT.attachImage(image),
+    attachFile: (file) => globalThis.SolCodexChatGPT.attachFile(file)
   }));
 }
 
@@ -315,6 +319,9 @@ async function refreshContextTarget() {
   state.loading = true;
   state.error = "";
   state.text = "";
+  state.file = null;
+  state.sendBusy = false;
+  state.sent = false;
   state.fileCache.clear();
   state.fileExpanded = new Set([""]);
   state.fileLoading.clear();
@@ -355,6 +362,65 @@ async function refreshContextTarget() {
   }
 }
 
+function contextSendError(error) {
+  const code = error?.code || error?.errorCode;
+  return ["NO_UPLOAD_INPUT", "NO_COMPOSER", "UPLOAD_INPUT_REJECTED", "ATTACHMENT_NOT_DETECTED", "INVALID_FILE", "EMPTY_CONTEXT"].includes(code)
+    ? t("error.contextSendFailed")
+    : error?.message || t("error.contextSendFailed");
+}
+
+function contextPayload(state) {
+  const projectName = state.target?.projectName || state.target?.projectPath?.split(/[\\/]/).filter(Boolean).pop() || "project";
+  const fileNames = {
+    project: `sol-project-context-${projectName}.md`,
+    snapshot: `codex-recent-progress-${projectName}.md`,
+    transcript: `codex-conversation-${projectName}.md`,
+    git: `codex-git-diff-${projectName}.md`
+  };
+  return globalThis.SolCodexContextActions.createPayload({
+    kind: state.kind,
+    title: t(`context.tabs.${state.kind}`),
+    content: state.text,
+    suggestedFileName: state.file?.filename || fileNames[state.kind],
+    fileContent: state.file?.text || state.text,
+    mime: state.file?.mimeType || "text/markdown"
+  });
+}
+
+async function sendToChatGPT(state) {
+  if (!state?.text || state.sendBusy || state.sent) return;
+  state.sendBusy = true;
+  state.error = "";
+  renderContextPopover();
+  try {
+    const result = await globalThis.SolCodexContextActions.sendPayload(contextPayload(state), state.target?.transferMode, {
+      insertText: (text) => globalThis.SolCodexChatGPT.insertText(text),
+      attachFile: (file) => globalThis.SolCodexChatGPT.attachFile(file)
+    });
+    if (!result?.ok) {
+      state.error = contextSendError(result);
+      return;
+    }
+    state.sent = true;
+    const button = state.button;
+    closeContextPopover();
+    if (button?.isConnected) {
+      button.disabled = true;
+      setQuickButtonVisual(button, "pull", "inserted");
+      setTimeout(() => {
+        if (!button.isConnected) return;
+        setQuickButtonVisual(button, "pull", "ready");
+        button.disabled = false;
+      }, 1200);
+    }
+  } catch (error) {
+    state.error = contextSendError(error);
+  } finally {
+    state.sendBusy = false;
+    if (contextState === state) renderContextPopover();
+  }
+}
+
 function renderContextPopover() {
   if (!contextPopover || !contextState) return;
   const { target } = contextState;
@@ -363,7 +429,7 @@ function renderContextPopover() {
     const state = contextState.loading ? "loading" : contextState.error ? "error" : contextState.text ? "loaded" : "ready";
     setQuickButtonVisual(button, "pull", state);
     renderInlineButtonMeta(button);
-    button.disabled = Boolean(contextState.loading);
+    button.disabled = Boolean(contextState.loading || contextState.sendBusy);
   }
   contextPopover.replaceChildren();
   const header = document.createElement("div");
@@ -417,6 +483,9 @@ function renderContextPopover() {
       if (kind === "files") {
         contextState.kind = "files";
         contextState.text = "";
+        contextState.file = null;
+        contextState.sendBusy = false;
+        contextState.sent = false;
         contextState.error = "";
         renderContextPopover();
         fileController(contextState).loadRoot();
@@ -448,29 +517,28 @@ function renderContextPopover() {
     const contextLabel = t("context.loaded", { label: t(`context.tabs.${contextState.kind}`) });
     label.textContent = `${contextLabel}${contextTime(contextState.capturedAt) ? ` · ${contextTime(contextState.capturedAt)}` : ""}`;
     const size = document.createElement("span");
-    size.textContent = `${(new Blob([contextState.text]).size / 1024).toFixed(1)} KB`;
+    const resolvedTransfer = globalThis.SolCodexContextActions.resolveTransferMode(contextState.target?.transferMode, contextState.text);
+    size.textContent = `${(new Blob([contextState.text]).size / 1024).toFixed(1)} KB · ${t(resolvedTransfer === "file" ? "context.willFile" : "context.willText")}`;
     toolbar.append(label, size);
     const content = document.createElement("pre");
     content.className = "sol-codex-context-preview-content";
     content.textContent = contextState.text.length > 900 ? `${contextState.text.slice(0, 900)}\n…` : contextState.text;
     preview.append(toolbar, content);
     body.appendChild(preview);
-    body.appendChild(contextButton(t("context.insert"), "sol-codex-context-primary", () => {
-      const button = contextState.button;
-      if (globalThis.SolCodexChatGPT.insertText(contextState.text).ok) {
-        closeContextPopover();
-        if (button?.isConnected) {
-          button.disabled = true;
-          setQuickButtonVisual(button, "pull", "inserted");
-          setTimeout(() => {
-            if (!button.isConnected) return;
-            setQuickButtonVisual(button, "pull", "ready");
-            button.disabled = false;
-          }, 1200);
-        }
-      } else contextState.error = t("error.noComposer");
-      renderContextPopover();
-    }));
+    const contextActions = document.createElement("div");
+    contextActions.className = "sol-codex-context-actions";
+    const meta = document.createElement("span");
+    meta.className = "sol-codex-context-transfer-meta";
+    meta.textContent = t(resolvedTransfer === "file" ? "context.willFile" : "context.willText");
+    contextActions.appendChild(meta);
+    const send = contextButton(
+      contextState.sendBusy ? t("context.sending") : contextState.sent ? t("context.sent") : t("context.send"),
+      "sol-codex-context-primary",
+      () => sendToChatGPT(contextState)
+    );
+    send.disabled = contextState.sendBusy || contextState.sent;
+    contextActions.appendChild(send);
+    body.appendChild(contextActions);
   }
   if (contextState.error) appendContextError(body, contextState.error);
   contextPopover.appendChild(body);
@@ -490,7 +558,7 @@ async function openContextPopover(button) {
   setQuickButtonVisual(button, "pull", "loading");
   const target = await getQuickTarget({ fresh: true });
   const state = {
-    target, button, allowed: null, kind: "project", text: "", results: [], capturedAt: null, loading: true, error: "",
+    target, button, allowed: null, kind: "project", text: "", file: null, sendBusy: false, sent: false, results: [], capturedAt: null, loading: true, error: "",
     fileCache: new Map(), fileExpanded: new Set([""]), fileLoading: new Set(), fileErrors: new Map(),
     fileDirectoryRequests: new Map(),
     fileSelected: null, fileSelectedPath: "", filePreview: null, filePreviewLoading: false, filePreviewError: "",
@@ -968,7 +1036,7 @@ chrome.storage?.onChanged?.addListener((changes, area) => {
     renderInlineButtons();
     if (contextPopover) renderContextPopover();
   }
-  const targetKeys = new Set(["bridgeToken", "selectedProject", "selectedSessionByProject", "mode", "handoffPayloadMode", "openApp", "projectCache", "sessionCacheByProject"]);
+  const targetKeys = new Set(["bridgeToken", "selectedProject", "selectedSessionByProject", "mode", "transferMode", "handoffPayloadMode", "openApp", "projectCache", "sessionCacheByProject"]);
   if (Object.keys(changes).some((key) => targetKeys.has(key))) {
     quickTargetCache = null;
     quickTargetAt = 0;

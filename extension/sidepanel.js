@@ -10,13 +10,13 @@ const els = {
   toggleAddProject: $("toggleAddProject"), addProjectBox: $("addProjectBox"),
   projectPathInput: $("projectPathInput"), addProject: $("addProject"), projectError: $("projectError"),
   sessionCard: $("sessionCard"), sessionCardTitle: $("sessionCardTitle"), sessionSelect: $("sessionSelect"), sessionMeta: $("sessionMeta"), sessionSync: $("sessionSync"),
-  modeHint: $("modeHint"), payloadMode: $("payloadMode"), openApp: $("openApp"), send: $("send"), sendLabel: $("sendLabel"), sendLoader: $("sendLoader"), sendElapsed: $("sendElapsed"),
+  modeHint: $("modeHint"), transferMode: $("transferMode"), openApp: $("openApp"), send: $("send"), sendLabel: $("sendLabel"), sendLoader: $("sendLoader"), sendElapsed: $("sendElapsed"),
   actionError: $("actionError"), toast: $("toast"), contextPermission: $("contextPermission"),
   pushView: $("pushView"), pullView: $("pullView"), contextManage: $("contextManage"), contextPermissionMenu: $("contextPermissionMenu"),
   disableContext: $("disableContext"), contextTargetMeta: $("contextTargetMeta"), contextPermissionBox: $("contextPermissionBox"),
   contextPermissionPath: $("contextPermissionPath"), allowContext: $("allowContext"), contextFileTools: $("contextFileTools"),
   contextSearchInput: $("contextSearchInput"), contextSearch: $("contextSearch"), contextResults: $("contextResults"),
-  contextPreviewContent: $("contextPreviewContent"), contextPreviewMeta: $("contextPreviewMeta"), addContextFile: $("addContextFile"), insertContext: $("insertContext"), contextError: $("contextError"),
+  contextPreviewContent: $("contextPreviewContent"), contextPreviewMeta: $("contextPreviewMeta"), sendContext: $("sendContext"), contextError: $("contextError"),
   standardContextView: $("standardContextView"), projectFilesView: $("projectFilesView"),
   projectFilesProjectName: $("projectFilesProjectName"), projectFilesRefresh: $("projectFilesRefresh"),
   projectFilesTreeView: $("projectFilesTreeView"), projectFilePreviewView: $("projectFilePreviewView"),
@@ -31,7 +31,7 @@ let sessions = [];
 let sessionCacheByProject = {};
 let selectedSessionByProject = {};
 let mode = "new";
-let handoffPayloadMode = "auto";
+let transferMode = "auto";
 let currentSource = null;
 let lastSent = null;
 let activeTabId = null;
@@ -48,8 +48,8 @@ let contextResults = [];
 let contextLimits = null;
 let contextSummary = "";
 let contextFile = null;
-let contextFileBusy = false;
-let contextFileAdded = false;
+let contextSendBusy = false;
+let contextSent = false;
 let contextBusy = false;
 let contextPermissionMenuOpen = false;
 let contextIndexVersion = 0;
@@ -242,8 +242,8 @@ function renderPayloadHint() {
   if (!text) return els.payloadHint.classList.add("hidden");
   const bytes = new TextEncoder().encode(text).length;
   const lines = text.split(/\r?\n/).length - (text.endsWith("\n") ? 1 : 0);
-  const artifact = handoffPayloadMode === "artifact" || (handoffPayloadMode === "auto" && (bytes > 24_000 || lines > 300));
-  els.payloadHint.textContent = t(artifact ? "send.artifactHint" : "send.inlineHint", { size: formatBytes(bytes) });
+  const resolved = globalThis.SolCodexContextActions.resolveTransferMode(transferMode, text);
+  els.payloadHint.textContent = t(resolved === "file" ? "send.fileHint" : "send.textHint", { size: formatBytes(bytes) });
   els.payloadHint.classList.remove("hidden");
 }
 
@@ -531,7 +531,7 @@ async function onProjectChanged(refresh = true) {
   contextLimits = null;
   contextSummary = "";
   contextFile = null;
-  contextFileAdded = false;
+  contextSent = false;
   await store({ selectedProject: project.path });
   useCachedSessions(project.path);
   if (refresh) await syncSessions(project.path, { quiet: true });
@@ -592,12 +592,32 @@ function contextCacheKey(part, project, session) {
   return `${project.path}\0${session?.id || ""}\0${part}\0${indexVersion}`;
 }
 
+function contextPayload() {
+  const project = selectedProject();
+  const projectName = project?.name || project?.path?.split(/[\\/]/).filter(Boolean).pop() || "project";
+  const fileNames = {
+    project: `sol-project-context-${projectName}.md`,
+    snapshot: `codex-recent-progress-${projectName}.md`,
+    transcript: `codex-conversation-${projectName}.md`,
+    git: `codex-git-diff-${projectName}.md`
+  };
+  return globalThis.SolCodexContextActions.createPayload({
+    kind: contextPart,
+    title: t(contextLabels[contextPart]),
+    content: contextText,
+    suggestedFileName: contextFile?.filename || fileNames[contextPart],
+    fileContent: contextFile?.text || contextText,
+    mime: contextFile?.mimeType || "text/markdown"
+  });
+}
+
 function applyCachedContext(cached) {
   contextText = cached?.text || "";
   contextResults = cached?.results || [];
   contextLimits = cached?.limits || null;
   contextSummary = cached?.summary || "";
   contextCapturedAt = cached?.capturedAt || null;
+  contextSent = false;
 }
 
 function projectFilesErrorText(error, fallbackKey) {
@@ -770,8 +790,10 @@ function renderProjectFilesTree() {
 function renderProjectFilePreview() {
   const selected = projectFilesState.selectedFile;
   const isImage = selected?.kind === "image";
+  const isBinary = selected?.kind === "binary" || selected?.binary;
   const hasContent = !projectFilesState.previewLoading && !isImage && selected?.content != null;
   const hasImage = !projectFilesState.previewLoading && !projectFilesState.imageLoading && isImage && projectFilesState.imageData?.base64;
+  const hasBinary = !projectFilesState.previewLoading && !projectFilesState.imageLoading && isBinary && projectFilesState.imageData?.base64;
   els.projectFilePreviewMeta.textContent = selected
     ? (selected.path || selected.name || "") + (selected.size != null ? " · " + formatBytes(selected.size) : "")
     : t("files.noPreview");
@@ -799,8 +821,8 @@ function renderProjectFilePreview() {
               ? t("files.imageUnsupported")
               : selected?.unsupportedImage
                 ? t("files.imageUnsupported")
-                : selected?.kind === "binary" || selected?.binary
-                  ? t("files.binaryUnsupported")
+                : isBinary
+                  ? hasBinary ? t("files.binary") : t("files.binaryUnsupported")
         : selected?.tooLarge
           ? t("files.tooLarge")
                   : selected && selected.content === ""
@@ -809,12 +831,12 @@ function renderProjectFilePreview() {
   els.projectFileCopy.classList.toggle("hidden", !hasContent);
   els.projectFileCopy.textContent = projectFilesState.copied ? t("files.copied") : t("files.copy");
   els.projectFileCopy.disabled = projectFilesState.copied;
-  const canInsert = hasContent || hasImage;
+  const canInsert = hasContent || hasImage || hasBinary;
   els.projectFileInsert.textContent = projectFilesState.action === "inserting"
     ? t("files.inserting")
     : projectFilesState.action === "success"
       ? t("files.inserted")
-      : isImage ? t("files.insertImage") : t("files.insertText");
+      : isImage ? t("files.insertImage") : t("files.send");
   els.projectFileInsert.disabled = !canInsert || projectFilesState.action === "inserting" || projectFilesState.action === "success";
   if (projectFilesState.actionError) els.projectFilePreviewNotice.textContent = projectFilesState.actionError;
 }
@@ -905,7 +927,7 @@ async function loadProjectFile(entry) {
     if (generation !== projectFilesState.generation || requestId !== projectFilesState.previewRequestId) return;
     projectFilesState.selectedFile = { ...entry, ...data };
     projectFilesState.previewLoading = false;
-    if (data?.kind === "image" && !data.blocked && !data.tooLarge) {
+    if ((data?.kind === "image" || data?.kind === "binary") && !data.blocked && !data.tooLarge) {
       projectFilesState.imageLoading = true;
       renderProjectFilesView();
       try {
@@ -986,12 +1008,12 @@ function renderContext() {
     ? t("context.readingEllipsis")
     : contextText || t("context.selectToRead", { label: contextLabel });
   const contextStamp = contextCapturedAt ? ` · ${formatTime(contextCapturedAt)}` : "";
+  const resolvedTransfer = contextText ? globalThis.SolCodexContextActions.resolveTransferMode(transferMode, contextText) : null;
   els.contextPreviewMeta.textContent = contextText
-    ? contextSummary || `${contextLabel}${contextStamp} · ${formatBytes(new Blob([contextText]).size)}`
+    ? `${contextSummary || `${contextLabel}${contextStamp} · ${formatBytes(new Blob([contextText]).size)}`} · ${t(resolvedTransfer === "file" ? "context.willFile" : "context.willText")}`
     : contextBusy ? t("context.reading") : t("context.unread");
-  els.insertContext.disabled = projectFilesActive || !contextText || contextBusy;
-  els.addContextFile.textContent = contextFileBusy ? t("context.addingFile") : contextFileAdded ? t("context.fileAdded") : t("context.addFile");
-  els.addContextFile.disabled = projectFilesActive || !contextFile?.text || contextBusy || contextFileBusy || contextFileAdded;
+  els.sendContext.textContent = contextSendBusy ? t("context.sending") : contextSent ? t("context.sent") : t("context.send");
+  els.sendContext.disabled = projectFilesActive || !contextText || contextBusy || contextSendBusy || contextSent;
   els.contextSearch.disabled = contextBusy;
   document.querySelectorAll(".context-tab").forEach((button) => button.classList.toggle("active", button.dataset.contextPart === contextPart));
   els.contextResults.replaceChildren();
@@ -1051,6 +1073,7 @@ function contextBundleSummary(data) {
 
 async function pullSideContext(part = contextPart) {
   contextPart = part;
+  contextSent = false;
   els.contextError.textContent = "";
   const { project, session } = contextTarget();
   if (part === "files") {
@@ -1063,7 +1086,7 @@ async function pullSideContext(part = contextPart) {
     contextLimits = null;
     contextSummary = "";
     contextFile = null;
-    contextFileAdded = false;
+    contextSent = false;
     contextCapturedAt = null;
     els.contextError.textContent = project ? t("context.chooseSession") : t("context.chooseProject");
     renderContext();
@@ -1086,7 +1109,7 @@ async function pullSideContext(part = contextPart) {
   contextLimits = null;
   contextSummary = "";
   contextFile = null;
-  contextFileAdded = false;
+  contextSent = false;
   contextCapturedAt = null;
   contextBusy = true;
   renderContext();
@@ -1106,7 +1129,7 @@ async function pullSideContext(part = contextPart) {
     contextLimits = data?.limits || data?.context?.limits || null;
     contextSummary = part === "project" ? contextBundleSummary(data) : "";
     contextFile = part === "project" ? data?.file || null : null;
-    contextFileAdded = false;
+    contextSent = false;
     contextCapturedAt = data?.capturedAt || data?.session?.updatedAt || data?.updatedAt || Date.now();
     if (part !== "project") pullContextCache.set(cacheKey, { text: contextText, results: [], limits: contextLimits, summary: contextSummary, capturedAt: contextCapturedAt });
   } catch (error) {
@@ -1147,7 +1170,7 @@ async function disableSideContext() {
     contextLimits = null;
     contextSummary = "";
     contextFile = null;
-    contextFileAdded = false;
+    contextSent = false;
     renderContext();
   } catch (error) {
     els.contextError.textContent = error.message;
@@ -1194,18 +1217,7 @@ async function readSideContextFile(result) {
   }
 }
 
-async function insertTextSideContext(text) {
-  try {
-    await sendToChatGPT({ type: "SOL_CODEX_INSERT_CONTEXT", text });
-    showToast(t("toast.contextInserted"));
-    return true;
-  } catch (error) {
-    els.contextError.textContent = error.message || String(error);
-    return false;
-  }
-}
-
-async function sendToChatGPT(message) {
+async function sendChatGPTMessage(message) {
   const tab = await getActiveChatGPTTab();
   if (!tab) {
     const error = new Error(t("error.notChatGPT"));
@@ -1221,27 +1233,37 @@ async function sendToChatGPT(message) {
   return result;
 }
 
-async function insertSideContext() {
-  await insertTextSideContext(contextText);
+async function sendToChatGPT(payload) {
+  const result = await globalThis.SolCodexContextActions.sendPayload(payload, transferMode, {
+    insertText: (text) => sendChatGPTMessage({ type: "SOL_CODEX_INSERT_CONTEXT", text }),
+    attachFile: (file) => sendChatGPTMessage({ type: "SOL_CODEX_ATTACH_CONTEXT_FILE", file })
+  });
+  if (!result?.ok) {
+    const error = new Error(result?.errorCode === "NO_COMPOSER" ? t("error.noComposer") : t("error.contextSendFailed"));
+    error.code = result?.errorCode || "CONTEXT_SEND_FAILED";
+    throw error;
+  }
+  return result;
 }
 
-async function addSideContextFile() {
-  if (!contextFile?.text || contextFileBusy || contextFileAdded) return;
-  contextFileBusy = true;
+async function sendSideContext() {
+  if (!contextText || contextSendBusy || contextSent) return;
+  contextSendBusy = true;
   els.contextError.textContent = "";
   renderContext();
   try {
-    await sendToChatGPT({
-      type: "SOL_CODEX_ATTACH_CONTEXT_FILE",
-      file: { name: contextFile.filename, mime: contextFile.mimeType, content: contextFile.text }
-    });
-    contextFileAdded = true;
-    showToast(t("toast.contextFileAdded"));
+    const result = await sendToChatGPT(contextPayload());
+    contextSent = true;
+    showToast(result.mode === "file" ? t("toast.contextFileSent") : t("toast.contextInserted"));
+    setTimeout(() => {
+      contextSent = false;
+      renderContext();
+    }, 1400);
   } catch (error) {
-    const attachError = new Set(["NO_UPLOAD_INPUT", "NO_COMPOSER", "UPLOAD_INPUT_REJECTED", "ATTACHMENT_NOT_DETECTED", "INVALID_FILE"]);
-    els.contextError.textContent = attachError.has(error.code) ? t("error.contextFileAttachFailed") : error.message || t("error.contextFileAttachFailed");
+    const attachError = new Set(["NO_UPLOAD_INPUT", "NO_COMPOSER", "UPLOAD_INPUT_REJECTED", "ATTACHMENT_NOT_DETECTED", "INVALID_FILE", "EMPTY_CONTEXT"]);
+    els.contextError.textContent = attachError.has(error.code) ? t("error.contextSendFailed") : error.message || t("error.contextSendFailed");
   } finally {
-    contextFileBusy = false;
+    contextSendBusy = false;
     renderContext();
   }
 }
@@ -1249,15 +1271,18 @@ async function addSideContextFile() {
 async function insertProjectFile() {
   const file = projectFilesState.selectedFile;
   const isImage = file?.kind === "image";
-  const canInsert = isImage ? projectFilesState.imageData?.base64 : file?.content != null;
+  const isBinary = file?.kind === "binary" || file?.binary;
+  const canInsert = isImage || isBinary ? projectFilesState.imageData?.base64 : file?.content != null;
   if (!canInsert || projectFilesState.action === "inserting" || projectFilesState.action === "success") return;
   projectFilesState.action = "inserting";
   projectFilesState.actionError = "";
   renderProjectFilesView();
   try {
-    await sendToChatGPT(isImage
+    await sendChatGPTMessage(isImage
       ? { type: "SOL_CODEX_ATTACH_IMAGE_TO_CHATGPT", image: { name: file.name, mime: file.mime, base64: projectFilesState.imageData.base64 } }
-      : { type: "SOL_CODEX_INSERT_CONTEXT", text: "Project file:\n" + file.path + "\n\n" + file.content });
+      : { type: "SOL_CODEX_ATTACH_CONTEXT_FILE", file: isBinary
+        ? { name: file.name, mime: file.mime || "application/octet-stream", base64: projectFilesState.imageData.base64 }
+        : { name: file.name, mime: file.mime || "text/plain", content: file.content } });
     projectFilesState.action = "success";
     showToast(isImage ? t("toast.imageAttached") : t("toast.contextInserted"));
   } catch (error) {
@@ -1425,7 +1450,7 @@ async function send() {
           sessionId: session?.id || null,
           prompt,
           source,
-          payloadMode: handoffPayloadMode,
+          transferMode,
           openApp: els.openApp.checked
         })
       }
@@ -1440,7 +1465,7 @@ async function send() {
       lastSent = marked.lastSent || source;
       renderSourceState();
     }
-    showToast(result.data.payload?.mode === "artifact"
+    showToast(result.data.payload?.transferMode === "file"
       ? t("toast.sentArtifact", { size: formatBytes(result.data.payload.originalBytes) })
       : result.data.warning || result.data.message || t("toast.sent"));
     if (result.data.warning) els.actionError.textContent = result.data.warning;
@@ -1514,9 +1539,9 @@ els.prompt.addEventListener("input", () => {
   if (currentSource && els.prompt.value !== currentSource.text) els.sourceLive.textContent = t("plan.edited");
   else renderSourceState();
 });
-els.payloadMode.addEventListener("change", async () => {
-  handoffPayloadMode = ["inline", "artifact", "auto"].includes(els.payloadMode.value) ? els.payloadMode.value : "auto";
-  await store({ handoffPayloadMode });
+els.transferMode.addEventListener("change", async () => {
+  transferMode = globalThis.SolCodexContextActions.normalizeTransferMode(els.transferMode.value);
+  await store({ transferMode });
   renderPayloadHint();
 });
 document.querySelectorAll(".context-tab").forEach((button) => button.addEventListener("click", () => {
@@ -1527,8 +1552,7 @@ els.allowContext.addEventListener("click", allowSideContext);
 els.disableContext.addEventListener("click", disableSideContext);
 els.contextSearch.addEventListener("click", searchSideContext);
 els.contextSearchInput.addEventListener("keydown", (event) => { if (event.key === "Enter") searchSideContext(); });
-els.addContextFile.addEventListener("click", addSideContextFile);
-els.insertContext.addEventListener("click", insertSideContext);
+els.sendContext.addEventListener("click", sendSideContext);
 els.projectFilesRefresh.addEventListener("click", refreshProjectFiles);
 els.projectFilesBack.addEventListener("click", () => {
   projectFilesState.view = "tree";
@@ -1548,9 +1572,11 @@ document.querySelectorAll(".language-switch button").forEach((button) => {
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== "local") return;
   if (changes.uiLanguage) applyLanguage(changes.uiLanguage.newValue);
-  if (changes.handoffPayloadMode) {
-    handoffPayloadMode = ["inline", "artifact", "auto"].includes(changes.handoffPayloadMode.newValue) ? changes.handoffPayloadMode.newValue : "auto";
-    els.payloadMode.value = handoffPayloadMode;
+  if (changes.transferMode || changes.handoffPayloadMode) {
+    transferMode = globalThis.SolCodexContextActions.normalizeTransferMode(
+      changes.transferMode?.newValue ?? changes.handoffPayloadMode?.newValue
+    );
+    els.transferMode.value = transferMode;
     renderPayloadHint();
   }
   if (changes.selectedProject) {
@@ -1564,7 +1590,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
   // Phase 1: restore durable UI state immediately. No Bridge request is needed.
   const saved = await chrome.storage.local.get([
     "bridgeToken", "bridgeHealth", "projectCache", "sessionCacheByProject",
-    "selectedProject", "selectedSessionByProject", "mode", "handoffPayloadMode", "openApp", "bridgeDirection", "uiLanguage"
+    "selectedProject", "selectedSessionByProject", "mode", "transferMode", "handoffPayloadMode", "openApp", "bridgeDirection", "uiLanguage"
   ]);
   const locale = i18n.normalizeLocale(saved.uiLanguage);
   if (saved.uiLanguage !== locale) await store({ uiLanguage: locale });
@@ -1575,8 +1601,9 @@ chrome.storage.onChanged.addListener((changes, area) => {
   bridgeDirection = saved.bridgeDirection === "pull" ? "pull" : "push";
   if (saved.bridgeDirection !== "push" && saved.bridgeDirection !== "pull") store({ bridgeDirection: "push" });
   els.openApp.checked = saved.openApp !== false;
-  handoffPayloadMode = ["inline", "artifact", "auto"].includes(saved.handoffPayloadMode) ? saved.handoffPayloadMode : "auto";
-  els.payloadMode.value = handoffPayloadMode;
+  transferMode = globalThis.SolCodexContextActions.normalizeTransferMode(saved.transferMode ?? saved.handoffPayloadMode);
+  els.transferMode.value = transferMode;
+  if (!saved.transferMode) await store({ transferMode });
   setMode(saved.mode === "queue" ? "queue" : "new", false);
   if (saved.mode !== "new" && saved.mode !== "queue") store({ mode: "new" });
   renderCachedBridge(saved);

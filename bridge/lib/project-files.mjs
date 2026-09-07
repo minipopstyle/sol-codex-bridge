@@ -4,6 +4,7 @@ import { assertContextReadable, isBlockedRelativePath, isLowValueRelativePath, i
 
 export const MAX_TEXT_BYTES = 512 * 1024;
 export const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
+export const MAX_ATTACHMENT_BYTES = MAX_IMAGE_BYTES;
 
 const binaryExtensions = new Set([
   ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".pdf", ".zip", ".gz", ".tar", ".tgz", ".dmg", ".sqlite", ".db",
@@ -169,9 +170,18 @@ export function readProjectFileData(projectPath, relativePath = "") {
   const base = metadata(resolved.root, resolved.target, resolved.relativePath, stat);
   const image = imageInfo(resolved.relativePath, readSample(resolved.target));
   if (isSensitiveFile(resolved.relativePath)) return { ok: true, ...base, kind: image?.valid ? "image" : "binary", mime: image?.mime || null, blocked: true, reason: "sensitive-file" };
-  if (!image?.mime || !image.valid) return { ok: true, ...base, kind: "binary", binary: true, unsupportedImage: Boolean(image?.mime), mime: image?.mime || null };
-  if (stat.size > MAX_IMAGE_BYTES) return { ok: true, ...base, kind: "image", mime: image.mime, tooLarge: true, maxBytes: MAX_IMAGE_BYTES };
+  if (stat.size > MAX_ATTACHMENT_BYTES) return { ok: true, ...base, kind: image?.valid ? "image" : "binary", mime: image?.mime || "application/octet-stream", tooLarge: true, maxBytes: MAX_ATTACHMENT_BYTES };
   let content;
-  try { content = fs.readFileSync(resolved.target); } catch { throw fileError("无法读取图片文件", 403, "FILE_READ_DENIED"); }
-  return { ok: true, ...base, kind: "image", mime: image.mime, tooLarge: false, base64: content.toString("base64") };
+  try { content = fs.readFileSync(resolved.target); } catch { throw fileError("无法读取项目文件", 403, "FILE_READ_DENIED"); }
+  const binary = isBinaryFile(resolved.relativePath, content);
+  return {
+    ok: true,
+    ...base,
+    kind: image?.valid ? "image" : binary ? "binary" : "text",
+    binary,
+    unsupportedImage: Boolean(image?.mime && !image.valid),
+    mime: image?.valid ? image.mime : binary ? "application/octet-stream" : "text/plain",
+    tooLarge: false,
+    base64: content.toString("base64")
+  };
 }

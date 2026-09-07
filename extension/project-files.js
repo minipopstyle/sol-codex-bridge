@@ -2,7 +2,7 @@
   const i18n = globalThis.SolCodexI18n;
   const t = (...args) => i18n.t(...args);
 
-  function createProjectFilesController({ state, client, button, render, insertText, attachImage }) {
+  function createProjectFilesController({ state, client, button, render, attachImage, attachFile }) {
     function fileSize(bytes) {
       const value = Number(bytes);
       if (!Number.isFinite(value)) return "";
@@ -164,14 +164,17 @@ async function insertSelectedFile() {
   const selected = state.filePreview;
   if (!selected || state.fileAction === "inserting") return;
   const image = selected.kind === "image";
-  if (selected.blocked || selected.tooLarge || selected.binary || (image && !state.fileImageData?.base64) || (!image && selected.content == null)) return;
+  const binary = selected.kind === "binary" || selected.binary;
+  if (selected.blocked || selected.tooLarge || (image && !state.fileImageData?.base64) || (binary && !state.fileImageData?.base64) || (!image && !binary && selected.content == null)) return;
   state.fileAction = "inserting";
   state.fileActionError = "";
   render();
   try {
     const result = image
       ? await attachImage({ name: selected.name, mime: selected.mime, base64: state.fileImageData.base64 })
-      : await insertText("Project file:\n" + selected.path + "\n\n" + selected.content);
+      : binary
+        ? await attachFile({ name: selected.name, mime: selected.mime || "application/octet-stream", base64: state.fileImageData.base64 })
+        : await attachFile({ name: selected.name, mime: selected.mime || "text/plain", content: selected.content });
     if (!result?.ok) {
       state.fileAction = "idle";
       state.fileActionError = fileActionError(result?.code, image);
@@ -295,12 +298,13 @@ function renderFilePreview() {
     preview.appendChild(actionError);
   }
   const canImage = selected?.kind === "image" && !selected.blocked && !selected.tooLarge && state.fileImageData?.base64;
+  const canBinary = selected?.kind === "binary" && !selected.blocked && !selected.tooLarge && state.fileImageData?.base64;
   const canText = isText && selected?.content != null;
-  if (canImage || canText) {
+  if (canImage || canBinary || canText) {
     const footer = document.createElement("div");
     footer.className = "sol-codex-file-preview-footer";
     const action = button(
-      state.fileAction === "inserting" ? t("files.inserting") : state.fileAction === "success" ? t("files.inserted") : canImage ? t("files.insertImage") : t("files.insertText"),
+      state.fileAction === "inserting" ? t("files.inserting") : state.fileAction === "success" ? t("files.inserted") : canImage ? t("files.insertImage") : t("files.send"),
       "sol-codex-context-primary",
       insertSelectedFile
     );
@@ -384,7 +388,7 @@ function renderFilePreview() {
         if (requestId !== state.filePreviewRequestId) return;
         state.filePreview = data;
         state.filePreviewLoading = false;
-        if (data?.kind === "image" && !data.blocked && !data.tooLarge) {
+        if ((data?.kind === "image" || data?.kind === "binary") && !data.blocked && !data.tooLarge) {
           state.fileImageLoading = true;
           render();
           try {

@@ -101,11 +101,11 @@
 
       <details class="card compact advanced-card">
         <summary data-i18n="settings.advanced">高级选项</summary>
-        <label for="payloadMode" data-i18n="settings.payloadMode">长内容发送方式</label>
-        <select id="payloadMode">
+        <label for="transferMode" data-i18n="settings.payloadMode">长内容发送方式</label>
+        <select id="transferMode">
           <option value="auto" data-i18n="settings.payloadAuto">自动</option>
-          <option value="inline" data-i18n="settings.payloadInline">始终作为文本</option>
-          <option value="artifact" data-i18n="settings.payloadArtifact">始终作为文件</option>
+          <option value="text" data-i18n="settings.payloadText">始终作为文本</option>
+          <option value="file" data-i18n="settings.payloadFile">始终作为文件</option>
         </select>
       </details>
 
@@ -158,8 +158,7 @@
             <pre id="contextPreviewContent" class="context-preview-content" data-i18n="context.emptyPreview">选择读取内容后显示</pre>
           </div>
           <div class="context-actions">
-            <button id="addContextFile" class="btn primary" disabled data-i18n="context.addFile">📎 添加为项目上下文文件</button>
-            <button id="insertContext" class="btn secondary" disabled data-i18n="context.insertText">插入为文本</button>
+            <button id="sendContext" class="btn primary" disabled data-i18n="context.send">发送到 ChatGPT</button>
           </div>
         </div>
         <div id="projectFilesView" class="project-files-view hidden" aria-live="polite">
@@ -180,7 +179,7 @@
             <pre id="projectFilePreviewContent" class="project-file-preview-content"></pre>
             <img id="projectFilePreviewImage" class="project-file-preview-image hidden" alt="">
             <div id="projectFilePreviewNotice" class="project-file-preview-notice"></div>
-            <button id="projectFileInsert" class="btn primary" disabled data-i18n="files.insertText">插入 ChatGPT</button>
+            <button id="projectFileInsert" class="btn primary" disabled data-i18n="files.send">发送到 ChatGPT</button>
           </div>
         </div>
         <div id="contextError" class="error"></div>
@@ -190,6 +189,7 @@
     <div id="toast" class="toast hidden"></div>
   </main>
   <script src="i18n.js"></script>
+  <script src="context-actions.js"></script>
   <script src="project-files-client.js"></script>
   <script src="sidepanel.js"></script>
 </body>

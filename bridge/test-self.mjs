@@ -289,7 +289,7 @@ const handoffScript = `
   const stat = fs.statSync(large.artifact.path);
   console.log(JSON.stringify({
     small: { mode: small.mode, text: small.inlineText },
-    large: { mode: large.mode, prompt: large.codexPrompt, artifact: large.artifact, file, modeBits: stat.mode & 0o777 },
+    large: { mode: large.mode, transferMode: large.transferMode, prompt: large.codexPrompt, artifact: large.artifact, file, modeBits: stat.mode & 0o777 },
     repeated: { mode: repeated.mode, path: repeated.artifact.path, reused: repeated.artifact.reused }
   }));
 `;
@@ -301,6 +301,7 @@ assert.equal(handoffChild.status, 0, handoffChild.stderr);
 const handoffData = JSON.parse(handoffChild.stdout.trim());
 assert.deepEqual(handoffData.small, { mode: "inline", text: "small prompt" });
 assert.equal(handoffData.large.mode, "artifact");
+assert.equal(handoffData.large.transferMode, "file");
 assert.match(handoffData.large.prompt, /请先完整读取该文件/);
 assert.match(handoffData.large.file, /^---\nschema: sol-codex-handoff\/v1/m);
 assert.match(handoffData.large.file, /# Large handoff/);
@@ -543,6 +544,7 @@ try {
   assert.equal(fakeImage.status, 200);
   assert.equal(fakeImage.data.kind, "binary");
   assert.equal(fakeImage.data.unsupportedImage, true);
+  assert.ok(fakeImage.data.base64, "binary project files must remain attachable as raw bytes");
   const fileTraversal = await api(`/api/project-file?${new URLSearchParams({ project, path: "../../etc/passwd" })}`);
   assert.equal(fileTraversal.status, 403);
   const apiBundle = await api("/api/context/bundle", { method: "POST", body: JSON.stringify({ projectPath: project, sessionId: "01a-test-session", parts: ["snapshot", "transcript", "git"] }) });
@@ -559,6 +561,7 @@ try {
   const apiHandoff = await api("/api/actions/send", { method: "POST", body: JSON.stringify(sendBody) });
   assert.equal(apiHandoff.status, 200, JSON.stringify(apiHandoff));
   assert.equal(apiHandoff.data.payload.mode, "artifact");
+  assert.equal(apiHandoff.data.payload.transferMode, "file");
   assert.match(apiHandoff.data.payload.artifact.relativePath, /^\.sol-codex-bridge\/handoffs\//);
   const artifactPath = path.join(project, apiHandoff.data.payload.artifact.relativePath);
   assert.match(fs.readFileSync(artifactPath, "utf8"), /# API handoff/);
@@ -569,6 +572,7 @@ try {
   const apiInline = await api("/api/actions/send", { method: "POST", body: JSON.stringify({ ...sendBody, prompt: "short API handoff", source: { type: "chatgpt", contentHash: "short" } }) });
   assert.equal(apiInline.status, 200);
   assert.equal(apiInline.data.payload.mode, "inline");
+  assert.equal(apiInline.data.payload.transferMode, "text");
   assert.doesNotMatch(spawnSync("git", ["-C", project, "status", "--porcelain"], { encoding: "utf8" }).stdout, /\.sol-codex-bridge/);
 } finally {
   bridgeProcess.kill();

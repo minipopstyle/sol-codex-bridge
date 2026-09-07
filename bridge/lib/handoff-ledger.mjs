@@ -19,6 +19,7 @@ export function appendHandoff({ source = {}, projectPath = "", sessionId = "", t
     sessionId: sessionId || null,
     sentAt: Date.now(),
     transport: transport || null,
+    transferMode: payload?.transferMode || (payload?.mode === "artifact" ? "file" : "text"),
     payloadMode: payload?.mode || "inline",
     originalBytes: Number(payload?.originalBytes || 0) || null,
     artifact: payload?.artifact ? {

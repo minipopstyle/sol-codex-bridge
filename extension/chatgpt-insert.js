@@ -71,11 +71,21 @@
 
   const findFileInput = findComposerFileInput;
 
-  async function attachFile({ name, mime, content }) {
-    if (!String(name || "").trim() || content == null) return { ok: false, code: "INVALID_FILE" };
+  async function attachFile({ name, mime, content, base64 }) {
+    const hasContent = content != null;
+    if (!String(name || "").trim() || (!hasContent && !base64)) return { ok: false, code: "INVALID_FILE" };
     const input = findComposerFileInput();
     if (!input) return { ok: false, code: "NO_UPLOAD_INPUT" };
-    const file = new File([String(content)], String(name), { type: String(mime || "text/plain") });
+    let bytes = hasContent ? String(content) : null;
+    if (!hasContent) {
+      try {
+        const binary = atob(String(base64).replace(/^data:[^;]+;base64,/, ""));
+        bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+      } catch {
+        return { ok: false, code: "INVALID_FILE" };
+      }
+    }
+    const file = new File([bytes], String(name), { type: String(mime || "application/octet-stream") });
     try {
       const dataTransfer = new DataTransfer();
       dataTransfer.items.add(file);
