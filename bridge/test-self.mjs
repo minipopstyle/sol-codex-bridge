@@ -510,6 +510,10 @@ try {
   const health = await api("/api/health", {}, false);
   assert.equal(health.status, 200);
   assert.equal(health.data.bridgeVersion, "0.2.12");
+  assert.equal(health.data.platform, process.platform);
+  assert.equal(health.data.capabilities.sessionRead, true);
+  assert.equal(health.data.capabilities.projectFiles, true);
+  assert.equal(health.data.capabilities.gitDiff, true);
   const unauthenticatedFiles = await api(`/api/project-files?${new URLSearchParams({ project, path: "" })}`, {}, false);
   assert.equal(unauthenticatedFiles.status, 401);
   const permission = await api(`/api/context/permission?project=${encodeURIComponent(project)}`);

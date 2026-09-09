@@ -20,7 +20,7 @@ import {
   launchNewTask,
   launchForkTask
 } from "./lib/codex-cli.mjs";
-import { findCodexDesktopApp } from "./lib/codex-desktop.mjs";
+import { findCodexDesktop, startBridge } from "./lib/platform/index.mjs";
 import { buildContextBundle, buildSessionSnapshot } from "./lib/context-bundle.mjs";
 import { readTranscript } from "./lib/codex-transcript.mjs";
 import { getGitDiff, searchProject, readProjectFile } from "./lib/project-context.mjs";
@@ -36,6 +36,11 @@ const TOKEN = getOrCreateToken();
 const startedAt = Date.now();
 const newTaskStates = new Map();
 
+try { startBridge(); } catch (error) {
+  error.code = error.code || "BRIDGE_START_FAILED";
+  throw error;
+}
+
 function recordHandoff(source, projectPath, sessionId, transport, payload) {
   try { appendHandoff({ source, projectPath, sessionId, transport, payload }); }
   catch (error) { console.error(`[HandoffLedger] ${error?.message || error}`); }
@@ -45,7 +50,20 @@ function recordHandoff(source, projectPath, sessionId, transport, payload) {
 const stateInit = initializeStateIndex();
 startStateIndexWatcher();
 let codexSnapshot = getCodexInfo({ fresh: true });
-const desktopApp = findCodexDesktopApp();
+const desktopApp = findCodexDesktop();
+
+function capabilities() {
+  const desktop = Boolean(desktopApp);
+  return {
+    codexCli: Boolean(codexSnapshot?.found),
+    codexDesktop: desktop,
+    openThread: desktop,
+    openProject: desktop,
+    sessionRead: true,
+    projectFiles: true,
+    gitDiff: true
+  };
+}
 try { cleanupHandoffArtifacts(); } catch (error) { console.error(`[HandoffArtifacts] ${error?.message || error}`); }
 
 function json(res, status, payload) {
@@ -94,6 +112,10 @@ async function handle(req, res) {
       authRequired: true,
       bridgeVersion: "0.2.12",
       uptimeMs: Date.now() - startedAt,
+      platform: process.platform,
+      desktopAvailable: Boolean(desktopApp),
+      cliAvailable: Boolean(codexSnapshot?.found),
+      capabilities: capabilities(),
       codex: codexSnapshot,
       desktop: { found: Boolean(desktopApp) },
       stateDb: state.stateDb,
@@ -211,7 +233,8 @@ async function handle(req, res) {
         version: codexSnapshot?.version || null,
         source: codexSnapshot?.source || null,
         capabilities: codexSnapshot?.capabilities || {},
-        desktop: { found: Boolean(desktopApp) }
+        desktop: { found: Boolean(desktopApp) },
+        bridgeCapabilities: capabilities()
       }
     }));
   }
@@ -376,8 +399,10 @@ const server = http.createServer((req, res) => {
 
 server.on("error", (error) => {
   if (error?.code === "EADDRINUSE") {
-    console.error(`Bridge 端口 ${PORT} 已被占用。请运行 restart-bridge.command 清理旧进程后重试。`);
+    error.code = "PORT_IN_USE";
+    console.error(`Bridge 端口 ${PORT} 已被占用。请运行对应平台的 restart-bridge 脚本清理旧进程后重试。`);
   } else {
+    error.code = "BRIDGE_START_FAILED";
     console.error("Bridge server error:", error);
   }
   process.exitCode = 1;

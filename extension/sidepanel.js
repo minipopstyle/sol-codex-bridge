@@ -252,8 +252,8 @@ function renderBridgeStatus() {
   if (kind === "online" && health) {
     els.bridgeDot.className = "dot online";
     const labels = [t("bridge.connected")];
-    if (health.desktop?.found) labels.push(t("bridge.codexAvailable"));
-    if (health.codex?.capabilities?.queueCli) labels.push(t("bridge.queueAvailable"));
+    if (health.capabilities?.codexDesktop ?? health.desktop?.found) labels.push(t("bridge.codexAvailable"));
+    if (health.capabilities?.codexCli && health.codex?.capabilities?.queueCli) labels.push(t("bridge.queueAvailable"));
     if (health.index?.sessions != null) labels.push(t("bridge.sessions", { count: formatNumber(health.index.sessions) }));
     els.bridgeText.textContent = labels.join(" · ");
   } else if (kind === "reconnecting") {

@@ -1,9 +1,10 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { BRIDGE_HOME, ensureBridgeHome, loadConfig, saveConfig } from "./config.mjs";
+import { findOpenFiles, stateDbCandidates as platformStateDbCandidates } from "./platform/index.mjs";
 
 const INDEX_PATH = path.join(BRIDGE_HOME, "session-index.json");
 const WATCH_INTERVAL_MS = Number(process.env.SOL_CODEX_INDEX_INTERVAL_MS || 1500);
@@ -108,13 +109,7 @@ function sqliteHome() {
 }
 
 export function stateDbCandidates() {
-  const home = os.homedir();
-  return [...new Set([
-    path.join(sqliteHome(), "state_5.sqlite"),
-    path.join(codexHome(), "state_5.sqlite"),
-    path.join(home, "Library", "Application Support", "Codex", "state_5.sqlite"),
-    path.join(home, "Library", "Application Support", "OpenAI", "Codex", "state_5.sqlite")
-  ])];
+  return [...new Set(platformStateDbCandidates({ codexHome: codexHome(), sqliteHome: sqliteHome() }))];
 }
 
 export function findStateDb() {
@@ -341,27 +336,9 @@ function loadJsonlThreads() {
 }
 
 function batchOpenFiles(files) {
-  if (process.platform === "win32") return new Set();
   const cacheMs = Number(process.env.SOL_CODEX_LSOF_CACHE_MS || 10_000);
   if (Date.now() - openFileCacheAt < cacheMs) return openFileCache;
-  const unique = [...new Set(files.filter((file) => file && existsFile(file)))].slice(0, 500);
-  if (!unique.length) {
-    openFileCache = new Set();
-    openFileCacheAt = Date.now();
-    return openFileCache;
-  }
-  const child = spawnSync("lsof", ["-Fn", "--", ...unique], {
-    encoding: "utf8",
-    timeout: 1800,
-    maxBuffer: 8 * 1024 * 1024,
-    stdio: ["ignore", "pipe", "ignore"]
-  });
-  const output = String(child.stdout || "");
-  const opened = new Set();
-  for (const line of output.split(/\r?\n/)) {
-    if (line.startsWith("n") && line.length > 1) opened.add(line.slice(1));
-  }
-  openFileCache = opened;
+  openFileCache = findOpenFiles(files);
   openFileCacheAt = Date.now();
   return openFileCache;
 }

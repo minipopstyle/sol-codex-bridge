@@ -87,7 +87,7 @@ if [[ -d "$INJECTOR_APP" ]]; then
   echo "Accessibility helper: $INJECTOR_APP"
   echo "在系统设置 → 隐私与安全性 → 辅助功能中允许“Sol Codex Bridge”。"
 else
-  echo "Accessibility helper: not installed（请重新运行 install-bridge.command）"
+  echo "Accessibility helper: not installed（请重新运行 macOS/install-bridge.command）"
 fi
 
 echo "=== Codex local storage ==="

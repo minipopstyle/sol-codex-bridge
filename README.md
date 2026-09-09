@@ -18,7 +18,7 @@
 
 ## Sol ↔ Codex 是什么？
 
-**Sol ↔ Codex Local Bridge** 是一个仅限 macOS 的 Chrome 扩展 + 本地 Bridge，提供两个一级方向：Sol → Codex 发送方案，以及 Codex → Sol 读取本地 Context。
+**Sol ↔ Codex Local Bridge** 是一个支持 macOS / Windows 的 Chrome 扩展 + 本地 Bridge，提供两个一级方向：Sol → Codex 发送方案，以及 Codex → Sol 读取本地 Context。
 
 它解决的是 ChatGPT 与 Codex 之间最后一段「上下文交接」：
 
@@ -173,22 +173,40 @@ Local Bridge 负责中间的 **Handoff**。
 
 ### 环境要求
 
-目前仅支持：
+支持：
 
-- macOS
+- macOS 或 Windows
 - Google Chrome
 - Node.js 18+
 - 已安装并登录的 Codex CLI
 
 ### 1. 安装 Local Bridge
 
-双击：
+macOS：打开 `macOS` 文件夹并双击：
 
 ```text
-install-bridge.command
+macOS/install-bridge.command
+```
+
+Windows：在 PowerShell 中运行：
+
+```powershell
+cd .\Windows
+.\install-bridge.ps1
 ```
 
 安装完成后会生成一个 **Pairing Token**，并自动复制到剪贴板。
+
+Windows 安装器会注册当前用户登录时启动的任务计划程序任务 `Sol Codex Local Bridge`，无需管理员权限。
+
+### 平台维护脚本
+
+| 操作 | macOS（在 `macOS` 文件夹中双击） | Windows（先执行 `cd .\Windows`） |
+| --- | --- | --- |
+| 安装 / 更新 | `install-bridge.command` | `.\install-bridge.ps1` |
+| 重启 Bridge | `restart-bridge.command` | `.\restart-bridge.ps1` |
+| 诊断 | `diagnose.command` | `.\diagnose.ps1` |
+| 卸载 | `uninstall-bridge.command` | `.\uninstall-bridge.ps1` |
 
 ### 2. 安装 Chrome 扩展
 
@@ -338,12 +356,22 @@ sol-codex-bridge/
 ├── extension/               # Chrome 扩展
 ├── bridge/                  # 本地 Bridge 服务与只读 Context API
 │   └── lib/
+│       ├── platform/        # macOS / Windows 平台适配
 │       ├── workspace-guard.mjs
 │       ├── codex-transcript.mjs
 │       ├── project-context.mjs
 │       ├── context-bundle.mjs
 │       └── handoff-ledger.mjs
-├── install-bridge.command   # macOS 安装脚本
+├── macOS/                   # 仅 macOS 用户使用
+│   ├── install-bridge.command
+│   ├── restart-bridge.command
+│   ├── diagnose.command
+│   └── uninstall-bridge.command
+├── Windows/                 # 仅 Windows 用户使用
+│   ├── install-bridge.ps1
+│   ├── restart-bridge.ps1
+│   ├── diagnose.ps1
+│   └── uninstall-bridge.ps1
 ├── assets/                  # README / 项目图片
 └── README.md
 ```
@@ -381,11 +409,21 @@ Codex Session / Project / Git
 
 ---
 
-## Platform
+## 平台支持
 
-目前：**macOS only**
+| 功能 | macOS | Windows |
+| --- | --- | --- |
+| Chrome Extension | ✅ | ✅ |
+| Local Bridge | ✅ | ✅ |
+| 项目读取 | ✅ | ✅ |
+| 项目文件 | ✅ | ✅ |
+| Session | ✅ | ✅ |
+| Git Diff | ✅ | ✅ |
+| 已有会话发送 | ✅ | ✅ |
+| 项目新任务 | ✅ | ✅ |
+| 打开 Codex Desktop | ✅ | ✅ / capability |
 
-Windows / Linux 暂未支持。
+Windows 首版使用 Codex CLI 执行，Desktop 深链仅作为可选打开动作；CLI 成功不依赖 Desktop。
 
 ---
 

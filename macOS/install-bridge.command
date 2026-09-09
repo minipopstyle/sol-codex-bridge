@@ -1,7 +1,7 @@
 #!/bin/bash
 set -u
 
-HERE="$(cd "$(dirname "$0")" && pwd)"
+HERE="$(cd "$(dirname "$0")/.." && pwd)"
 APP_HOME="$HOME/.sol-codex-bridge/app"
 DATA_HOME="$HOME/.sol-codex-bridge"
 PLIST="$HOME/Library/LaunchAgents/com.sol-codex.local-bridge.plist"
@@ -258,7 +258,7 @@ echo
 echo "✅ Sol → Codex Local Bridge v0.2.12 已启动"
 echo "Bridge: http://127.0.0.1:${PORT}"
 if [[ -s "$DATA_HOME/manual.pid" ]]; then
-  echo "启动方式: 后台 fallback（本次登录会话有效；restart-bridge.command 可重新拉起）"
+  echo "启动方式: 后台 fallback（本次登录会话有效；macOS/restart-bridge.command 可重新拉起）"
 else
   echo "启动方式: macOS LaunchAgent"
 fi

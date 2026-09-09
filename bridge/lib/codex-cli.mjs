@@ -2,12 +2,17 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
-import { execFileSync, spawn } from "node:child_process";
-import { constants as fsConstants } from "node:fs";
 import { createRequire } from "node:module";
 import { queueViaLocalDaemon, daemonSocketExists } from "./codex-daemon.mjs";
 import { findStateDb } from "./codex-state.mjs";
-import { openDesktopThread, openDesktopProject } from "./codex-desktop.mjs";
+import {
+  execCodex,
+  findCodexCli,
+  isExecutable,
+  openProject,
+  openThread,
+  spawnCodex
+} from "./platform/index.mjs";
 
 const require = createRequire(import.meta.url);
 let DatabaseSync = null;
@@ -17,25 +22,8 @@ const CACHE_TTL_MS = Number(process.env.SOL_CODEX_CLI_CACHE_MS || 10 * 60 * 1000
 let cachedSelection = null;
 let cachedAt = 0;
 
-function execText(command, args, options = {}) {
-  return execFileSync(command, args, {
-    encoding: "utf8",
-    timeout: options.timeout || 12_000,
-    maxBuffer: options.maxBuffer || 4 * 1024 * 1024,
-    cwd: options.cwd,
-    stdio: ["ignore", "pipe", "pipe"],
-    env: options.env || process.env
-  }).trim();
-}
-
 function executable(file) {
-  if (!file) return false;
-  try {
-    fs.accessSync(file, fsConstants.X_OK);
-    return fs.statSync(file).isFile();
-  } catch {
-    return false;
-  }
+  return isExecutable(file);
 }
 
 function savedCodexBin() {
@@ -49,27 +37,10 @@ function savedCodexBin() {
   }
 }
 
-function interactiveShellCodex() {
-  const shell = process.env.SHELL || "/bin/zsh";
-  if (!executable(shell)) return null;
-  try {
-    const result = execText(shell, ["-lic", "command -v codex 2>/dev/null || true"], {
-      timeout: 2500,
-      env: {
-        ...process.env,
-        PATH: process.env.PATH || "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
-      }
-    });
-    return executable(result) ? result : null;
-  } catch {
-    return null;
-  }
-}
-
 function commandList(bin) {
   if (!bin) return new Set();
   try {
-    const help = execText(bin, ["--help"], { timeout: 3500 });
+    const help = execCodex(bin, ["--help"], { timeout: 3500 });
     const commands = new Set();
     let inCommands = false;
     for (const line of help.split(/\r?\n/)) {
@@ -91,7 +62,7 @@ function commandList(bin) {
 function subcommandList(bin, command) {
   if (!bin) return new Set();
   try {
-    const help = execText(bin, [command, "--help"], { timeout: 3500 });
+    const help = execCodex(bin, [command, "--help"], { timeout: 3500 });
     const commands = new Set();
     let inCommands = false;
     for (const line of help.split(/\r?\n/)) {
@@ -134,55 +105,17 @@ function candidateScore(info) {
 }
 
 function candidatePaths() {
-  const raw = [];
-  const push = (bin, source) => {
-    if (executable(bin)) raw.push({ bin, source });
-  };
-
-  // CODEX_BIN is a hint by default, not an unconditional override. v0.2.3 made
-  // this a hard override and could pin the bridge to an older npm CLI forever.
-  push(process.env.CODEX_BIN, "CODEX_BIN");
-  push(savedCodexBin(), "saved");
-
   const extra = String(process.env.SOL_CODEX_EXTRA_BINS || "")
     .split(path.delimiter)
     .map((value) => value.trim())
     .filter(Boolean);
-  for (const bin of extra) push(bin, "extra");
-
-  push("/Applications/Codex.app/Contents/Resources/codex", "Codex.app");
-  push(path.join(os.homedir(), "Applications", "Codex.app", "Contents", "Resources", "codex"), "Codex.app(user)");
-  push("/Applications/ChatGPT.app/Contents/Resources/codex", "ChatGPT.app");
-  push(path.join(os.homedir(), "Applications", "ChatGPT.app", "Contents", "Resources", "codex"), "ChatGPT.app(user)");
-
-  for (const bin of [
-    "/opt/homebrew/bin/codex",
-    "/usr/local/bin/codex",
-    path.join(os.homedir(), ".npm-global", "bin", "codex"),
-    path.join(os.homedir(), ".local", "bin", "codex"),
-    path.join(os.homedir(), ".cargo", "bin", "codex"),
-    path.join(os.homedir(), "Library", "pnpm", "codex")
-  ]) push(bin, "common-path");
-
-  push(interactiveShellCodex(), "login-shell");
-  try { push(execText("/usr/bin/which", ["codex"], { timeout: 1500 }), "PATH"); } catch {}
-
-  const deduped = [];
-  const seen = new Set();
-  for (const item of raw) {
-    let key = item.bin;
-    try { key = fs.realpathSync(item.bin); } catch {}
-    if (seen.has(key)) continue;
-    seen.add(key);
-    deduped.push(item);
-  }
-  return deduped;
+  return findCodexCli({ savedBin: savedCodexBin(), extraBins: extra });
 }
 
 function inspectCandidate(candidate) {
   const { bin, source } = candidate;
   let version = null;
-  try { version = execText(bin, ["--version"], { timeout: 2500 }); } catch {}
+  try { version = execCodex(bin, ["--version"], { timeout: 2500 }); } catch {}
   const commands = commandList(bin);
   const execCommands = commands.has("exec") ? subcommandList(bin, "exec") : new Set();
   const capabilities = {
@@ -239,21 +172,15 @@ function ensureProject(projectPath) {
   if (!stat?.isDirectory()) throw new Error("项目目录不存在");
 }
 
-function writePromptTemp(prompt) {
-  const dir = path.join(os.tmpdir(), "sol-codex-bridge");
-  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-  const file = path.join(dir, `prompt-${Date.now()}-${crypto.randomBytes(4).toString("hex")}.txt`);
-  fs.writeFileSync(file, prompt, { mode: 0o600 });
-  return file;
-}
-
-function shellQuote(value) {
-  return `'${String(value).replaceAll("'", `'"'"'`)}'`;
+function codedError(message, code) {
+  const error = new Error(message);
+  error.code = code;
+  return error;
 }
 
 export function openProjectInCodex(projectPath) {
   ensureProject(projectPath);
-  return openDesktopProject(projectPath);
+  return openProject(projectPath);
 }
 
 export function codexThreadUrl(sessionId) {
@@ -262,34 +189,8 @@ export function codexThreadUrl(sessionId) {
   return `codex://threads/${encodeURIComponent(value)}`;
 }
 
-function openCodexDeepLink(url) {
-  if (process.platform === "darwin") {
-    // Codex Desktop registers com.openai.codex. Routing by bundle id is more
-    // reliable than `codex app <PATH>` and, crucially, does not create a new thread.
-    try {
-      execText("/usr/bin/open", ["-b", "com.openai.codex", url], { timeout: 8000 });
-    } catch {
-      // Fallback lets LaunchServices pick the registered handler.
-      execText("/usr/bin/open", [url], { timeout: 8000 });
-    }
-    return;
-  }
-
-  if (process.platform === "win32") {
-    execText("powershell.exe", [
-      "-NoProfile",
-      "-Command",
-      "& { param($target) Start-Process -FilePath $target }",
-      url
-    ], { timeout: 8000 });
-    return;
-  }
-
-  throw new Error("当前平台暂不支持自动切换 Codex Desktop 会话");
-}
-
 export function openSessionInCodex(sessionId) {
-  return openDesktopThread(sessionId);
+  return openThread(sessionId);
 }
 
 function queueConfigIssue(text) {
@@ -313,12 +214,13 @@ export function queueViaCli(sessionId, prompt, info = getCodexInfo({ fresh: true
   const text = String(prompt || "");
   if (!threadId) throw new Error("缺少 Codex 会话 ID");
   if (!text.trim()) throw new Error("方案内容为空");
-  if (!info?.bin || !info?.capabilities?.queueCli) throw new Error("当前 Codex CLI 不支持 queue");
+  if (!info?.bin) throw codedError("未找到 Codex CLI", "CODEX_CLI_NOT_FOUND");
+  if (!info?.capabilities?.queueCli) throw new Error("当前 Codex CLI 不支持 queue");
 
   try {
     const args = ["queue", "--thread", threadId, "--message", text];
     if (projectPath) args.push("-C", projectPath);
-    const output = execText(info.bin, args, { timeout: 30_000, cwd: projectPath || undefined });
+    const output = execCodex(info.bin, args, { timeout: 30_000, cwd: projectPath || undefined });
     return { ok: true, transport: "codex-queue", codexBin: info.bin, codexVersion: info.version, output };
   } catch (error) {
     const detail = error?.stderr?.toString?.().trim() || error?.stdout?.toString?.().trim() || error?.message || String(error);
@@ -332,10 +234,11 @@ function startNewViaCli(projectPath, prompt, info = getCodexInfo({ fresh: true }
   const text = String(prompt || "");
   if (!text.trim()) throw new Error("方案内容为空");
   ensureProject(projectPath);
-  if (!info?.bin || !info?.capabilities?.exec) throw new Error("当前 Codex CLI 不支持创建新任务");
+  if (!info?.bin) throw codedError("未找到 Codex CLI", "CODEX_CLI_NOT_FOUND");
+  if (!info?.capabilities?.exec) throw new Error("当前 Codex CLI 不支持创建新任务");
 
   return new Promise((resolve, reject) => {
-    const child = spawn(info.bin, ["exec", "--skip-git-repo-check", "--json", text], {
+    const child = spawnCodex(info.bin, ["exec", "--skip-git-repo-check", "--json", text], {
       cwd: projectPath,
       env: process.env,
       stdio: ["ignore", "pipe", "pipe"]
@@ -396,10 +299,11 @@ export function resumeViaCli(sessionId, prompt, projectPath, info = getCodexInfo
   if (!threadId) throw new Error("缺少 Codex 会话 ID");
   if (!text.trim()) throw new Error("方案内容为空");
   ensureProject(projectPath);
-  if (!info?.bin || !info?.capabilities?.execResume) throw new Error("当前 Codex CLI 不支持 exec resume");
+  if (!info?.bin) throw codedError("未找到 Codex CLI", "CODEX_CLI_NOT_FOUND");
+  if (!info?.capabilities?.execResume) throw new Error("当前 Codex CLI 不支持 exec resume");
 
   return new Promise((resolve, reject) => {
-    const child = spawn(info.bin, ["exec", "resume", "--skip-git-repo-check", "--json", threadId, text], {
+    const child = spawnCodex(info.bin, ["exec", "resume", "--skip-git-repo-check", "--json", threadId, text], {
       cwd: projectPath,
       env: process.env,
       stdio: ["ignore", "pipe", "pipe"]
@@ -460,7 +364,7 @@ function stateDbQueueSupport() {
 export function queueViaStateDb(sessionId, prompt) {
   if (!DatabaseSync) throw new Error("当前 Node.js 不提供 node:sqlite，无法使用 Codex 本地持久队列兜底");
   const dbPath = findStateDb();
-  if (!dbPath) throw new Error("未找到 Codex state_5.sqlite，无法写入本地持久队列");
+  if (!dbPath) throw codedError("未找到 Codex state_5.sqlite，无法写入本地持久队列", "STATE_DB_NOT_FOUND");
 
   const threadId = String(sessionId || "").trim();
   if (!threadId) throw new Error("缺少 Codex 会话 ID");
@@ -582,7 +486,7 @@ export async function queueToSession(sessionId, prompt, { projectPath = null } =
   }
 
   const error = new Error(`无法向 Codex 会话发送：${errors.join("；")}`);
-  error.code = "CODEX_QUEUE_UNAVAILABLE";
+  error.code = cliInfo.found ? "CODEX_QUEUE_UNAVAILABLE" : "CODEX_CLI_NOT_FOUND";
   error.previousTransportErrors = errors;
   throw error;
 }

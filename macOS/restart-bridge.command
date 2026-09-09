@@ -85,7 +85,7 @@ if ! health; then
 
   NODE_BIN="$(find_node || true)"
   if [[ -z "$NODE_BIN" || ! -f "$APP_HOME/server.mjs" ]]; then
-    echo "Bridge 未安装完整，请重新运行 install-bridge.command"
+    echo "Bridge 未安装完整，请重新运行 macOS/install-bridge.command"
     read -n 1 -s -r -p "按任意键关闭…"; echo; exit 1
   fi
   NODE_NO_WARNINGS=1 /usr/bin/nohup "$NODE_BIN" "$APP_HOME/server.mjs" >>"$DATA_HOME/bridge.log" 2>>"$DATA_HOME/bridge.error.log" </dev/null &

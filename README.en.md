@@ -18,7 +18,7 @@
 
 ## What is Sol ↔ Codex?
 
-**Sol ↔ Codex Local Bridge** is a macOS-only Chrome extension and local Bridge with two-way handoff: send plans from Sol to Codex, or bring Codex context back to Sol.
+**Sol ↔ Codex Local Bridge** is a macOS / Windows Chrome extension and local Bridge with two-way handoff: send plans from Sol to Codex, or bring Codex context back to Sol.
 
 It connects the last step between ChatGPT and Codex:
 
@@ -32,7 +32,7 @@ Chrome Extension
 Codex Session / Project Files / Git
 ```
 
-Plan and discuss in ChatGPT, then send the current response directly to Codex on your Mac.
+Plan and discuss in ChatGPT, then send the current response directly to Codex on your computer.
 
 No more repeating:
 
@@ -150,20 +150,38 @@ Context reads are explicit, read-only user actions. The Bridge does not proactiv
 
 ### Requirements
 
-- macOS;
+- macOS or Windows;
 - Google Chrome;
 - Node.js 18+;
 - Codex CLI installed and signed in.
 
 ### 1. Install the Local Bridge
 
-Double-click:
+On macOS, open the `macOS` folder and double-click:
 
 ```text
-install-bridge.command
+macOS/install-bridge.command
+```
+
+On Windows, run in PowerShell:
+
+```powershell
+cd .\Windows
+.\install-bridge.ps1
 ```
 
 The installer creates a **Pairing Token** and copies it to the clipboard.
+
+The Windows installer registers `Sol Codex Local Bridge` as a current-user logon task and does not require administrator privileges.
+
+### Platform maintenance scripts
+
+| Action | macOS (double-click inside `macOS`) | Windows (first run `cd .\Windows`) |
+| --- | --- | --- |
+| Install / update | `install-bridge.command` | `.\install-bridge.ps1` |
+| Restart Bridge | `restart-bridge.command` | `.\restart-bridge.ps1` |
+| Diagnose | `diagnose.command` | `.\diagnose.ps1` |
+| Uninstall | `uninstall-bridge.command` | `.\uninstall-bridge.ps1` |
 
 ### 2. Install the Chrome extension
 
@@ -301,12 +319,22 @@ sol-codex-bridge/
 ├── extension/               # Chrome extension
 ├── bridge/                  # Local Bridge and read-only Context API
 │   └── lib/
+│       ├── platform/        # macOS / Windows platform adapters
 │       ├── workspace-guard.mjs
 │       ├── codex-transcript.mjs
 │       ├── project-context.mjs
 │       ├── context-bundle.mjs
 │       └── handoff-ledger.mjs
-├── install-bridge.command   # macOS installer
+├── macOS/                   # macOS-only scripts
+│   ├── install-bridge.command
+│   ├── restart-bridge.command
+│   ├── diagnose.command
+│   └── uninstall-bridge.command
+├── Windows/                 # Windows-only scripts
+│   ├── install-bridge.ps1
+│   ├── restart-bridge.ps1
+│   ├── diagnose.ps1
+│   └── uninstall-bridge.ps1
 ├── assets/                  # README / project images
 ├── CHANGELOG.md
 └── README.md
@@ -339,11 +367,21 @@ ChatGPT / Sol
 Codex Session / Project / Git
 ```
 
-## Platform
+## Platform support
 
-Currently: **macOS only**
+| Feature | macOS | Windows |
+| --- | --- | --- |
+| Chrome Extension | ✅ | ✅ |
+| Local Bridge | ✅ | ✅ |
+| Project discovery | ✅ | ✅ |
+| Project files | ✅ | ✅ |
+| Sessions | ✅ | ✅ |
+| Git diff | ✅ | ✅ |
+| Existing-session handoff | ✅ | ✅ |
+| New project task | ✅ | ✅ |
+| Open Codex Desktop | ✅ | ✅ / capability |
 
-Windows and Linux are not supported yet.
+The first Windows version uses Codex CLI for execution. Desktop deep links are optional; a CLI handoff does not fail when Desktop is unavailable.
 
 ## Changelog
 

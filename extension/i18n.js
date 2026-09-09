@@ -31,7 +31,7 @@
       "bridge.disconnected": "本地 Bridge 未连接",
 
       "pair.title": "首次配对",
-      "pair.description": "运行 install-bridge.command 后，配对码已复制到剪贴板。粘贴一次即可。",
+      "pair.description": "运行对应系统文件夹中的安装脚本后，配对码已复制到剪贴板。粘贴一次即可。",
       "pair.placeholder": "粘贴 Pairing Token",
       "pair.connect": "连接",
 
@@ -271,7 +271,7 @@
       "bridge.disconnected": "Local Bridge unavailable",
 
       "pair.title": "First-time Pairing",
-      "pair.description": "After running install-bridge.command, the pairing code is copied to your clipboard. Paste it once to connect.",
+      "pair.description": "After running the installer in the macOS or Windows folder, the pairing code is copied to your clipboard. Paste it once to connect.",
       "pair.placeholder": "Paste Pairing Token",
       "pair.connect": "Connect",
 
