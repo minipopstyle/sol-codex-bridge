@@ -316,23 +316,34 @@ function applySource(source, sent = undefined) {
     lastAutoPrompt = source.text;
   }
   els.contextMeta.textContent = t("plan.sourceMeta", {
-    title: source.title || "ChatGPT",
+    title: source.title || "AI",
     count: t("plan.bytes", { count: formatBytes(new TextEncoder().encode(source.text || "").length) })
   });
   renderSourceState();
 }
 
-async function getActiveChatGPTTab() {
+function detectSupportedSite(urlString) {
+  try {
+    const hostname = new URL(urlString).hostname.toLowerCase();
+    if (hostname === "chatgpt.com" || hostname.endsWith(".chatgpt.com")) return "chatgpt";
+    if (hostname === "prism.openai.com") return "prism";
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+async function getActiveSupportedTab() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (!tab?.id || !/^https:\/\/(?:[^.]+\.)?chatgpt\.com\//i.test(tab.url || "")) return null;
+  if (!tab?.id || !detectSupportedSite(tab.url || "")) return null;
   return tab;
 }
 
 async function restoreSourceState() {
-  const tab = await getActiveChatGPTTab();
+  const tab = await getActiveSupportedTab();
   activeTabId = tab?.id || null;
   if (!activeTabId) {
-    els.contextMeta.textContent = t("error.notChatGPT");
+    els.contextMeta.textContent = t("error.notSupportedSite");
     return;
   }
   try {
@@ -494,8 +505,8 @@ async function syncSessions(projectPath, { quiet = true } = {}) {
 async function captureContext(showReading = true) {
   if (showReading) els.contextMeta.textContent = t("plan.readingPage");
   try {
-    const tab = await getActiveChatGPTTab();
-    if (!tab) throw new Error(t("error.notChatGPT"));
+    const tab = await getActiveSupportedTab();
+    if (!tab) throw new Error(t("error.notSupportedSite"));
     activeTabId = tab.id;
     const response = await chrome.tabs.sendMessage(tab.id, { type: "SOL_CODEX_GET_CONTEXT" });
     if (!response?.text) throw new Error(response?.error || t("plan.noLatestReply"));
@@ -1217,26 +1228,32 @@ async function readSideContextFile(result) {
   }
 }
 
-async function sendChatGPTMessage(message) {
-  const tab = await getActiveChatGPTTab();
+async function sendSupportedSiteMessage(message) {
+  const tab = await getActiveSupportedTab();
   if (!tab) {
-    const error = new Error(t("error.notChatGPT"));
-    error.code = "NOT_CHATGPT";
+    const error = new Error(t("error.notSupportedSite"));
+    error.code = "NOT_SUPPORTED_SITE";
     throw error;
   }
   const result = await chrome.tabs.sendMessage(tab.id, message);
   if (!result?.ok) {
-    const error = new Error(result?.errorCode === "NO_COMPOSER" ? t("error.noComposer") : t("files.insertFailed"));
+    const error = new Error(result?.errorCode === "NO_COMPOSER"
+      ? t("error.noComposer")
+      : result?.errorCode === "NO_ASSISTANT_UPLOAD_INPUT"
+        ? t("files.noUploadInput")
+        : t("files.insertFailed"));
     error.code = result?.errorCode || "INSERT_FAILED";
     throw error;
   }
   return result;
 }
 
-async function sendToChatGPT(payload) {
+async function sendToSupportedSite(payload) {
+  const tab = await getActiveSupportedTab();
   const result = await globalThis.SolCodexContextActions.sendPayload(payload, transferMode, {
-    insertText: (text) => sendChatGPTMessage({ type: "SOL_CODEX_INSERT_CONTEXT", text }),
-    attachFile: (file) => sendChatGPTMessage({ type: "SOL_CODEX_ATTACH_CONTEXT_FILE", file })
+    insertText: (text) => sendSupportedSiteMessage({ type: "SOL_CODEX_INSERT_CONTEXT", text }),
+    attachFile: (file) => sendSupportedSiteMessage({ type: "SOL_CODEX_ATTACH_CONTEXT_FILE", file }),
+    fallbackToText: detectSupportedSite(tab?.url || "") === "prism"
   });
   if (!result?.ok) {
     const error = new Error(result?.errorCode === "NO_COMPOSER" ? t("error.noComposer") : t("error.contextSendFailed"));
@@ -1252,7 +1269,7 @@ async function sendSideContext() {
   els.contextError.textContent = "";
   renderContext();
   try {
-    const result = await sendToChatGPT(contextPayload());
+    const result = await sendToSupportedSite(contextPayload());
     contextSent = true;
     showToast(result.mode === "file" ? t("toast.contextFileSent") : t("toast.contextInserted"));
     setTimeout(() => {
@@ -1260,7 +1277,7 @@ async function sendSideContext() {
       renderContext();
     }, 1400);
   } catch (error) {
-    const attachError = new Set(["NO_UPLOAD_INPUT", "NO_COMPOSER", "UPLOAD_INPUT_REJECTED", "ATTACHMENT_NOT_DETECTED", "INVALID_FILE", "EMPTY_CONTEXT"]);
+    const attachError = new Set(["NO_UPLOAD_INPUT", "NO_ASSISTANT_UPLOAD_INPUT", "NO_COMPOSER", "UPLOAD_INPUT_REJECTED", "ATTACHMENT_NOT_DETECTED", "INVALID_FILE", "EMPTY_CONTEXT"]);
     els.contextError.textContent = attachError.has(error.code) ? t("error.contextSendFailed") : error.message || t("error.contextSendFailed");
   } finally {
     contextSendBusy = false;
@@ -1278,7 +1295,7 @@ async function insertProjectFile() {
   projectFilesState.actionError = "";
   renderProjectFilesView();
   try {
-    await sendChatGPTMessage(isImage
+    await sendSupportedSiteMessage(isImage
       ? { type: "SOL_CODEX_ATTACH_IMAGE_TO_CHATGPT", image: { name: file.name, mime: file.mime, base64: projectFilesState.imageData.base64 } }
       : { type: "SOL_CODEX_ATTACH_CONTEXT_FILE", file: isBinary
         ? { name: file.name, mime: file.mime || "application/octet-stream", base64: projectFilesState.imageData.base64 }
@@ -1287,7 +1304,7 @@ async function insertProjectFile() {
     showToast(isImage ? t("toast.imageAttached") : t("toast.contextInserted"));
   } catch (error) {
     projectFilesState.action = "idle";
-    projectFilesState.actionError = error.code === "NO_UPLOAD_INPUT"
+    projectFilesState.actionError = error.code === "NO_UPLOAD_INPUT" || error.code === "NO_ASSISTANT_UPLOAD_INPUT"
       ? t("files.noUploadInput")
       : error.code === "ATTACHMENT_NOT_DETECTED" || error.code === "UPLOAD_INPUT_REJECTED"
         ? t("files.attachmentNotDetected")

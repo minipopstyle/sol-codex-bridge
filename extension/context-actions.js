@@ -96,11 +96,27 @@
     return insertText(text);
   }
 
-  async function sendPayload(payload, transferMode, { attachFile, insertText } = {}) {
+  function canFallbackToText(error) {
+    return ["NO_UPLOAD_INPUT", "NO_ASSISTANT_UPLOAD_INPUT", "UPLOAD_INPUT_REJECTED", "ATTACHMENT_NOT_DETECTED", "ATTACHER_UNAVAILABLE"].includes(error?.code);
+  }
+
+  async function sendPayload(payload, transferMode, { attachFile, insertText, fallbackToText = false } = {}) {
+    const requestedMode = normalizeTransferMode(transferMode);
     const mode = resolveTransferMode(transferMode, payload?.content);
-    const result = mode === "file"
-      ? await attachPayloadAsFile(payload, attachFile)
-      : await insertPayloadAsText(payload, insertText);
+    let result;
+    if (mode === "file") {
+      try {
+        result = await attachPayloadAsFile(payload, attachFile);
+      } catch (error) {
+        if (!fallbackToText || requestedMode !== "auto" || !canFallbackToText(error)) throw error;
+        result = await insertPayloadAsText(payload, insertText);
+        return { ...(result || { ok: false }), mode: "text" };
+      }
+      if (result?.ok || !fallbackToText || requestedMode !== "auto" || !canFallbackToText(result)) return { ...(result || { ok: false }), mode };
+      result = await insertPayloadAsText(payload, insertText);
+      return { ...(result || { ok: false }), mode: "text" };
+    }
+    result = await insertPayloadAsText(payload, insertText);
     return { ...(result || { ok: true }), mode };
   }
 

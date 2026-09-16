@@ -154,7 +154,7 @@
 
 function fileActionError(code, image) {
   if (code === "NO_COMPOSER") return t("error.noComposer");
-  if (code === "NO_UPLOAD_INPUT") return t("files.noUploadInput");
+  if (code === "NO_UPLOAD_INPUT" || code === "NO_ASSISTANT_UPLOAD_INPUT") return t("files.noUploadInput");
   if (code === "ATTACHMENT_NOT_DETECTED" || code === "UPLOAD_INPUT_REJECTED") return t("files.attachmentNotDetected");
   if (code === "INVALID_IMAGE") return t("files.imageUnsupported");
   return image ? t("files.attachFailed") : t("files.insertFailed");

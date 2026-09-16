@@ -34,4 +34,30 @@ const sent = await actions.sendPayload(
 );
 assert.equal(sent.mode, "file");
 assert.equal(sentFile.name, "recent.md");
+
+let fallbackText;
+const largeContext = `project context\n${"x".repeat(24_001)}`;
+const fallback = await actions.sendPayload(
+  actions.createPayload({ kind: "project", content: largeContext }),
+  "auto",
+  {
+    attachFile: () => ({ ok: false, code: "NO_ASSISTANT_UPLOAD_INPUT" }),
+    insertText: (text) => { fallbackText = text; return { ok: true }; },
+    fallbackToText: true
+  }
+);
+assert.equal(fallback.mode, "text");
+assert.equal(fallbackText, largeContext);
+let thrownFallbackText;
+const thrownFallback = await actions.sendPayload(
+  actions.createPayload({ kind: "project", content: largeContext }),
+  "auto",
+  {
+    attachFile: () => { throw Object.assign(new Error("upload failed"), { code: "ATTACHMENT_NOT_DETECTED" }); },
+    insertText: (text) => { thrownFallbackText = text; return { ok: true }; },
+    fallbackToText: true
+  }
+);
+assert.equal(thrownFallback.mode, "text");
+assert.equal(thrownFallbackText, largeContext);
 console.log("context-actions self-check passed");

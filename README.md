@@ -20,6 +20,8 @@
 
 **Sol ↔ Codex Local Bridge** 是一个支持 macOS / Windows 的 Chrome 扩展 + 本地 Bridge，提供两个一级方向：Sol → Codex 发送方案，以及 Codex → Sol 读取本地 Context。
 
+目前支持 ChatGPT 和 [Prism](https://prism.openai.com/)。两者都可以使用同一套本地项目、会话、Context 和文件交接能力。
+
 它解决的是 ChatGPT 与 Codex 之间最后一段「上下文交接」：
 
 ```text
@@ -32,7 +34,7 @@ Chrome Extension
 Codex Session / Project Files / Git
 ```
 
-你可以在 ChatGPT 中完成需求分析、方案设计和任务拆解，然后直接把当前回复发送到本机 Codex。
+你可以在 ChatGPT 或 Prism 中完成需求分析、方案设计和任务拆解，然后直接把当前回复发送到本机 Codex。
 
 不再需要反复：
 
@@ -55,7 +57,18 @@ Codex Session / Project Files / Git
 
 并发送给本机 Codex。
 
-### Codex → Sol 读取内容
+### Prism 支持
+
+在 Prism 页面中同样支持：
+
+- 读取当前 Assistant 回复并显示 `← Sol` / `Codex →` 内联按钮；
+- 把项目上下文、最近进度、会话记录和 Git Diff 插入 Prism；
+- 将 Context 和项目文件作为真实附件发送到 Prism；
+- 发送 PNG / JPG / WebP 等项目图片作为附件。
+
+Prism 的附件上传使用页面自己的 Assistant 上传控件，不会额外弹出系统文件选择器。Prism 页面本身可以使用官方 Astra 模型；Bridge 不替换或代理模型，只负责本地 Context、文件和会话之间的交接。
+
+### Codex → Sol 读取内容（ChatGPT / Prism）
 
 最新 Assistant 回复旁会同时出现：
 
@@ -63,7 +76,7 @@ Codex Session / Project Files / Git
 ← Sol        Codex →
 ```
 
-点击 `← Sol` 后，可从当前已选项目和会话读取：
+点击 `← Sol` 后，可从当前 ChatGPT 或 Prism 页面对应的项目和会话读取：
 
 - 项目上下文
 - 最近进度 Snapshot
@@ -71,7 +84,7 @@ Codex Session / Project Files / Git
 - Git Diff
 - 项目文件只读浏览与文本预览
 
-默认读取“最近进度”。读取内容需要用户操作，并只提供“插入 ChatGPT”，不会自动发送 ChatGPT 消息。
+默认读取“最近进度”。读取内容需要用户操作，并只提供“插入当前页面”，不会自动发送 ChatGPT 或 Prism 消息。
 
 ### 📁 本地项目
 
@@ -144,7 +157,7 @@ ChatGPT 最新回复旁会出现：
 ## 工作流
 
 ```text
-① 在 ChatGPT 中讨论需求
+① 在 ChatGPT 或 Prism 中讨论需求
         ↓
 ② 得到实施方案
         ↓
@@ -156,7 +169,7 @@ ChatGPT 最新回复旁会出现：
         ↓
 ⑥ Sol → Codex 发送，或 Codex → Sol 读取 Context
         ↓
-⑦ 检查后手动发送 ChatGPT
+⑦ 检查后手动发送到当前页面
 ```
 
 ChatGPT 负责 **Think / Plan**。
@@ -232,9 +245,9 @@ chrome://extensions
 
 ### 4. 刷新 ChatGPT 和插件
 
-首次安装扩展后，请刷新 ChatGPT 网页，并重新打开或刷新扩展侧栏。
+首次安装扩展后，请刷新 ChatGPT 或 Prism 网页，并重新打开或刷新扩展侧栏。
 
-当会话右下角出现 `← Sol    Codex →` 按钮，表示页面数据已刷新成功。
+当 ChatGPT 或 Prism 会话右下角出现 `← Sol    Codex →` 按钮，表示页面数据已刷新成功。
 
 ---
 
@@ -242,7 +255,7 @@ chrome://extensions
 
 ### 创建新的 Codex 任务
 
-1. 在 ChatGPT 打开 Sol ↔ Codex 侧栏
+1. 在 ChatGPT 或 Prism 打开 Sol ↔ Codex 侧栏
 2. 选择本地项目
 3. 选择 **项目新任务**
 4. 点击 **发送到 Codex**
@@ -278,8 +291,8 @@ Bridge 会把当前 ChatGPT 内容追加到这个会话，而不是重新创建�
 2. 选择项目；需要会话的内容会优先使用活跃/使用中的最新会话
 3. 首次读取时点击“允许读取”
 4. 选择“项目上下文”“最近进度”“会话记录”“Git Diff”或“项目文件”
-5. 检查 Context Preview 后点击“插入 ChatGPT”
-6. 回到 ChatGPT，确认内容后由用户手动点击 Send
+5. 检查 Context Preview 后点击“插入当前对话”
+6. 回到当前 ChatGPT 或 Prism 页面，确认内容后由用户手动发送
 
 “项目被选择”不等于“允许读取”。关闭读取权限后，Bridge 会对 Context API 返回 `403`。
 
@@ -335,7 +348,7 @@ Workspace Guard 会拒绝项目外路径、symlink escape、`.env`、密钥、`.
 Chrome 扩展只与以下目标通信：
 
 ```text
-ChatGPT
+ChatGPT / Prism
       ↕
 Chrome Extension
       ↕

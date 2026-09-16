@@ -1,66 +1,15 @@
 const i18n = globalThis.SolCodexI18n;
 const t = (...args) => i18n.t(...args);
+const site = globalThis.SolCodexSite;
 
 function normalizeText(value) {
   return String(value || "").replace(/\u00a0/g, " ").replace(/[ \t]+\n/g, "\n").trim();
-}
-
-function assistantText(node) {
-  if (!node) return "";
-  // The injected Codex button may live inside ChatGPT's turn/action DOM. Strip it
-  // from a clone before extracting text so it never changes contentHash/revision.
-  const clone = node.cloneNode(true);
-  clone.querySelectorAll?.(".sol-codex-inline-wrap, .sol-codex-inline-btn").forEach((item) => item.remove());
-  return normalizeText(clone.innerText || clone.textContent);
-}
-
-function assistantNodes() {
-  return [...document.querySelectorAll('[data-message-author-role="assistant"]')]
-    .filter((node) => normalizeText(node.innerText || node.textContent).length > 0);
-}
-
-function latestAssistantNode() {
-  const nodes = assistantNodes();
-  return nodes[nodes.length - 1] || null;
-}
-
-function messageIdFor(node, index) {
-  if (!node) return `assistant-${index}`;
-  const own = node.getAttribute?.("data-message-id");
-  if (own) return own;
-  const ancestor = node.closest?.("[data-message-id]");
-  if (ancestor?.getAttribute("data-message-id")) return ancestor.getAttribute("data-message-id");
-  const child = node.querySelector?.("[data-message-id]");
-  if (child?.getAttribute("data-message-id")) return child.getAttribute("data-message-id");
-  const turn = node.closest?.('article[data-testid^="conversation-turn"]');
-  const testId = turn?.getAttribute("data-testid");
-  return testId || `assistant-${index}`;
-}
-
-function conversationId() {
-  const match = location.pathname.match(/\/c\/([^/?#]+)/i);
-  if (match?.[1]) return match[1];
-  return `path:${location.pathname}`;
 }
 
 function currentUserSelection() {
   const selection = window.getSelection?.();
   if (!selection || selection.isCollapsed) return "";
   return normalizeText(selection.toString());
-}
-
-function pageTitle() {
-  const raw = normalizeText(document.title);
-  return raw.replace(/\s*[-–—]\s*ChatGPT\s*$/i, "") || "ChatGPT";
-}
-
-function streamingNow() {
-  return Boolean(document.querySelector([
-    'button[data-testid="stop-button"]',
-    'button[aria-label*="Stop" i]',
-    'button[aria-label*="停止"]',
-    '[data-testid="stop-button"]'
-  ].join(",")));
 }
 
 async function sha256(text) {
@@ -70,27 +19,28 @@ async function sha256(text) {
 }
 
 async function buildLatestSource() {
-  const nodes = assistantNodes();
+  if (!site) return null;
+  const nodes = site.getAssistantNodes();
   const node = nodes[nodes.length - 1];
   if (!node) return null;
-  const text = assistantText(node);
+  const text = site.getAssistantText(node);
   if (!text) return null;
   const assistantIndex = nodes.length - 1;
-  const messageId = messageIdFor(node, assistantIndex);
+  const messageId = site.getMessageId(node, assistantIndex);
   const contentHash = await sha256(text);
   return {
-    type: "chatgpt",
-    conversationId: conversationId(),
+    type: site.id,
+    conversationId: site.getConversationId(),
     messageId,
     messageKey: `${messageId}:${assistantIndex}`,
     branchId: null,
     assistantIndex,
     contentHash,
     text,
-    title: pageTitle(),
+    title: site.getTitle(),
     url: location.href,
     capturedAt: Date.now(),
-    isStreaming: streamingNow()
+    isStreaming: site.isStreaming()
   };
 }
 
@@ -297,8 +247,8 @@ function fileController(state) {
     client: globalThis.SolCodexProjectFilesClient,
     button: contextButton,
     render: renderContextPopover,
-    attachImage: (image) => globalThis.SolCodexChatGPT.attachImage(image),
-    attachFile: (file) => globalThis.SolCodexChatGPT.attachFile(file)
+    attachImage: (image) => globalThis.SolCodexSite.attachImage(image),
+    attachFile: (file) => globalThis.SolCodexSite.attachFile(file)
   }));
 }
 
@@ -364,7 +314,7 @@ async function refreshContextTarget() {
 
 function contextSendError(error) {
   const code = error?.code || error?.errorCode;
-  return ["NO_UPLOAD_INPUT", "NO_COMPOSER", "UPLOAD_INPUT_REJECTED", "ATTACHMENT_NOT_DETECTED", "INVALID_FILE", "EMPTY_CONTEXT"].includes(code)
+  return ["NO_UPLOAD_INPUT", "NO_ASSISTANT_UPLOAD_INPUT", "NO_COMPOSER", "UPLOAD_INPUT_REJECTED", "ATTACHMENT_NOT_DETECTED", "INVALID_FILE", "EMPTY_CONTEXT"].includes(code)
     ? t("error.contextSendFailed")
     : error?.message || t("error.contextSendFailed");
 }
@@ -387,15 +337,16 @@ function contextPayload(state) {
   });
 }
 
-async function sendToChatGPT(state) {
+async function sendToSite(state) {
   if (!state?.text || state.sendBusy || state.sent) return;
   state.sendBusy = true;
   state.error = "";
   renderContextPopover();
   try {
     const result = await globalThis.SolCodexContextActions.sendPayload(contextPayload(state), state.target?.transferMode, {
-      insertText: (text) => globalThis.SolCodexChatGPT.insertText(text),
-      attachFile: (file) => globalThis.SolCodexChatGPT.attachFile(file)
+      insertText: (text) => globalThis.SolCodexSite.insertText(text),
+      attachFile: (file) => globalThis.SolCodexSite.attachFile(file),
+      fallbackToText: globalThis.SolCodexSite?.id === "prism"
     });
     if (!result?.ok) {
       state.error = contextSendError(result);
@@ -534,7 +485,7 @@ function renderContextPopover() {
     const send = contextButton(
       contextState.sendBusy ? t("context.sending") : contextState.sent ? t("context.sent") : t("context.send"),
       "sol-codex-context-primary",
-      () => sendToChatGPT(contextState)
+      () => sendToSite(contextState)
     );
     send.disabled = contextState.sendBusy || contextState.sent;
     contextActions.appendChild(send);
@@ -750,7 +701,9 @@ function renderInlineButtons() {
     renderInlineButtonMeta(button);
   });
   if (contextPopover) renderContextPopover();
-  observer.observe(document.documentElement, { childList: true, subtree: true, characterData: true });
+  const root = site?.getObserverRoot?.() || document.documentElement;
+  observer.observe(root, { childList: true, subtree: true, characterData: true });
+  observedRoot = root;
 }
 
 function stopInlineTaskTimer(button) {
@@ -814,13 +767,6 @@ function removeStaleQuickButtons(keepKey = "") {
     if (!keepKey || wrap.dataset.messageKey !== keepKey) wrap.remove();
   });
   if (!keepKey) closeContextPopover();
-}
-
-function quickButtonHost(node) {
-  const turn = node?.closest?.('article[data-testid^="conversation-turn"]');
-  if (turn) return turn;
-  const message = node?.closest?.('[data-message-author-role="assistant"]');
-  return message || node?.parentElement || document.body;
 }
 
 function targetDescription(target) {
@@ -902,7 +848,7 @@ async function sendFromInlineButton(button) {
 
 async function ensureQuickButton(source = null) {
   source ||= await buildLatestSource();
-  const node = latestAssistantNode();
+  const node = site?.latestAssistantNode();
   if (!source || !node) {
     removeStaleQuickButtons();
     return;
@@ -920,7 +866,11 @@ async function ensureQuickButton(source = null) {
   let button = wrap?.querySelector(".sol-codex-push-btn") || wrap?.querySelector(".sol-codex-inline-btn:not(.sol-codex-context-btn)") || null;
   let contextButtonElement = wrap?.querySelector(".sol-codex-context-btn") || null;
   let actions = wrap?.querySelector(".sol-codex-inline-actions") || null;
-  const host = quickButtonHost(node);
+  const host = site?.getInlineButtonHost(node);
+  if (!host) {
+    removeStaleQuickButtons();
+    return;
+  }
   host?.classList?.add("sol-codex-inline-host");
   if (!wrap || !button) {
     wrap = document.createElement("div");
@@ -1022,12 +972,31 @@ const observer = new MutationObserver((mutations) => {
     const element = target.nodeType === Node.TEXT_NODE ? target.parentElement : target;
     return element?.closest?.(".sol-codex-loader-grid, .sol-codex-loading-label, .sol-codex-loading-elapsed");
   });
-  if (!onlyLoaderChanges) schedulePublish(streamingNow() ? 650 : 300);
+  if (!onlyLoaderChanges) schedulePublish(site?.isStreaming() ? 650 : 300);
 });
-observer.observe(document.documentElement, { childList: true, subtree: true, characterData: true });
+
+let observedRoot = null;
+function observeSiteRoot() {
+  const root = site?.getObserverRoot?.();
+  if (!root && site?.id === "prism") {
+    observer.disconnect();
+    observedRoot = null;
+    return;
+  }
+  const nextRoot = root || document.documentElement;
+  if (nextRoot === observedRoot) return;
+  observer.disconnect();
+  observer.observe(nextRoot, { childList: true, subtree: true, characterData: true });
+  observedRoot = nextRoot;
+}
+
+observeSiteRoot();
 
 // Covers SPA URL/branch changes that do not reliably mutate the latest message node.
-setInterval(() => schedulePublish(50), 1800);
+setInterval(() => {
+  observeSiteRoot();
+  schedulePublish(50);
+}, 1800);
 
 chrome.storage?.onChanged?.addListener((changes, area) => {
   if (area !== "local") return;
@@ -1060,18 +1029,18 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return false;
   }
   if (message?.type === "SOL_CODEX_INSERT_CONTEXT") {
-    const result = globalThis.SolCodexChatGPT.insertText(message.text);
+    const result = globalThis.SolCodexSite.insertText(message.text);
     sendResponse({ ok: Boolean(result?.ok), errorCode: result?.code || null });
     return false;
   }
   if (message?.type === "SOL_CODEX_ATTACH_IMAGE_TO_CHATGPT") {
-    globalThis.SolCodexChatGPT.attachImage(message.image)
+    globalThis.SolCodexSite.attachImage(message.image)
       .then((result) => sendResponse({ ok: Boolean(result?.ok), errorCode: result?.code || null }))
       .catch((error) => sendResponse({ ok: false, errorCode: error?.code || "ATTACH_FAILED" }));
     return true;
   }
   if (message?.type === "SOL_CODEX_ATTACH_CONTEXT_FILE") {
-    globalThis.SolCodexChatGPT.attachFile(message.file)
+    globalThis.SolCodexSite.attachFile(message.file)
       .then((result) => sendResponse({ ok: Boolean(result?.ok), errorCode: result?.code || null }))
       .catch((error) => sendResponse({ ok: false, errorCode: error?.code || "ATTACH_FAILED" }));
     return true;
@@ -1085,7 +1054,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       ok: true,
       source: selected ? "selection" : "latest-assistant",
       text,
-      title: pageTitle(),
+      title: site?.getTitle() || "AI",
       url: location.href,
       sourceMeta: selected ? null : source
     });

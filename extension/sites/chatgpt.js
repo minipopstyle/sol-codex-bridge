@@ -1,10 +1,47 @@
 (function () {
-  function composer() {
-    const field = document.querySelector("#prompt-textarea")
+  function normalizeText(value) {
+    return String(value || "").replace(/\u00a0/g, " ").replace(/[ \t]+\n/g, "\n").trim();
+  }
+
+  function assistantText(node) {
+    if (!node) return "";
+    const clone = node.cloneNode(true);
+    clone.querySelectorAll?.(".sol-codex-inline-wrap, .sol-codex-inline-btn").forEach((item) => item.remove());
+    return normalizeText(clone.innerText || clone.textContent);
+  }
+
+  function assistantNodes() {
+    return [...document.querySelectorAll('[data-message-author-role="assistant"]')]
+      .filter((node) => assistantText(node));
+  }
+
+  function latestAssistantNode() {
+    const nodes = assistantNodes();
+    return nodes[nodes.length - 1] || null;
+  }
+
+  function messageId(node, index) {
+    if (!node) return `assistant-${index}`;
+    const own = node.getAttribute?.("data-message-id");
+    if (own) return own;
+    const ancestor = node.closest?.("[data-message-id]");
+    if (ancestor?.getAttribute("data-message-id")) return ancestor.getAttribute("data-message-id");
+    const child = node.querySelector?.("[data-message-id]");
+    if (child?.getAttribute("data-message-id")) return child.getAttribute("data-message-id");
+    const turn = node.closest?.('article[data-testid^="conversation-turn"]');
+    return turn?.getAttribute("data-testid") || `assistant-${index}`;
+  }
+
+  function composerField() {
+    return document.querySelector("#prompt-textarea")
       || document.querySelector('[data-testid="composer"] textarea')
       || document.querySelector('[data-testid="composer"] [contenteditable="true"]')
       || document.querySelector('textarea[placeholder*="Message" i], textarea[placeholder*="消息"]')
       || document.querySelector('[contenteditable="true"]');
+  }
+
+  function getComposer() {
+    const field = composerField();
     return field?.closest("form") || field?.closest('[data-testid="composer"]') || field?.parentElement || null;
   }
 
@@ -18,11 +55,7 @@
   function insertText(text) {
     const value = String(text || "");
     if (!value) return { ok: false, code: "EMPTY_TEXT" };
-    const field = document.querySelector("#prompt-textarea")
-      || document.querySelector('[data-testid="composer"] textarea')
-      || document.querySelector('[data-testid="composer"] [contenteditable="true"]')
-      || document.querySelector('textarea[placeholder*="Message" i], textarea[placeholder*="消息"]')
-      || document.querySelector('[contenteditable="true"]');
+    const field = composerField();
     if (!field) return { ok: false, code: "NO_COMPOSER" };
 
     if (field instanceof HTMLTextAreaElement || field instanceof HTMLInputElement) {
@@ -59,7 +92,7 @@
   }
 
   function findComposerFileInput() {
-    const root = composer();
+    const root = getComposer();
     const form = root?.closest("form") || (root?.tagName === "FORM" ? root : null);
     if (!root && !form) return null;
     const scoped = [...document.querySelectorAll('input[type="file"]')]
@@ -67,36 +100,6 @@
     const visible = scoped.filter((input) => input.offsetParent !== null || input.getClientRects().length > 0);
     const candidates = visible.length ? visible : scoped;
     return candidates.find((input) => /image/i.test(input.accept || "")) || candidates[0] || null;
-  }
-
-  const findFileInput = findComposerFileInput;
-
-  async function attachFile({ name, mime, content, base64 }) {
-    const hasContent = content != null;
-    if (!String(name || "").trim() || (!hasContent && !base64)) return { ok: false, code: "INVALID_FILE" };
-    const input = findComposerFileInput();
-    if (!input) return { ok: false, code: "NO_UPLOAD_INPUT" };
-    let bytes = hasContent ? String(content) : null;
-    if (!hasContent) {
-      try {
-        const binary = atob(String(base64).replace(/^data:[^;]+;base64,/, ""));
-        bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
-      } catch {
-        return { ok: false, code: "INVALID_FILE" };
-      }
-    }
-    const file = new File([bytes], String(name), { type: String(mime || "application/octet-stream") });
-    try {
-      const dataTransfer = new DataTransfer();
-      dataTransfer.items.add(file);
-      input.files = dataTransfer.files;
-      input.dispatchEvent(new Event("change", { bubbles: true }));
-      input.dispatchEvent(new Event("input", { bubbles: true }));
-    } catch {
-      return { ok: false, code: "UPLOAD_INPUT_REJECTED" };
-    }
-    const attached = await waitForAttachment(composer(), file);
-    return attached ? { ok: true } : { ok: false, code: "ATTACHMENT_NOT_DETECTED" };
   }
 
   function attachmentDetected(root, file) {
@@ -124,22 +127,28 @@
     });
   }
 
-  async function attachImage({ name, mime, base64 }) {
-    if (!/^image\//i.test(String(mime || "")) || !base64) return { ok: false, code: "INVALID_IMAGE" };
+  function fileFromPayload({ name, mime, content, base64 } = {}) {
+    const hasContent = content != null;
+    if (!String(name || "").trim() || (!hasContent && !base64)) return null;
+    let bytes = hasContent ? String(content) : null;
+    if (!hasContent) {
+      try {
+        const binary = atob(String(base64).replace(/^data:[^;]+;base64,/, ""));
+        bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+      } catch {
+        return null;
+      }
+    }
+    return new File([bytes], String(name), { type: String(mime || "application/octet-stream") });
+  }
+
+  async function attachFile(payload) {
     const input = findComposerFileInput();
     if (!input) return { ok: false, code: "NO_UPLOAD_INPUT" };
-    let bytes;
+    const file = fileFromPayload(payload);
+    if (!file) return { ok: false, code: "INVALID_FILE" };
     try {
-      const raw = String(base64).replace(/^data:[^;]+;base64,/, "");
-      const binary = atob(raw);
-      bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
-    } catch {
-      return { ok: false, code: "INVALID_IMAGE" };
-    }
-    const file = new File([bytes], String(name || "image"), { type: String(mime) });
-    let dataTransfer;
-    try {
-      dataTransfer = new DataTransfer();
+      const dataTransfer = new DataTransfer();
       dataTransfer.items.add(file);
       input.files = dataTransfer.files;
       input.dispatchEvent(new Event("change", { bubbles: true }));
@@ -147,9 +156,59 @@
     } catch {
       return { ok: false, code: "UPLOAD_INPUT_REJECTED" };
     }
-    const attached = await waitForAttachment(composer(), file);
-    return attached ? { ok: true } : { ok: false, code: "ATTACHMENT_NOT_DETECTED" };
+    return (await waitForAttachment(getComposer(), file))
+      ? { ok: true }
+      : { ok: false, code: "ATTACHMENT_NOT_DETECTED" };
   }
 
-  globalThis.SolCodexChatGPT = { insertText, attachImage, attachFile, findFileInput, findComposerFileInput };
+  async function attachImage({ name, mime, base64 } = {}) {
+    if (!/^image\//i.test(String(mime || "")) || !base64) return { ok: false, code: "INVALID_IMAGE" };
+    return attachFile({ name: name || "image", mime, base64 });
+  }
+
+  globalThis.SolCodexChatGPTSite = {
+    id: "chatgpt",
+    matches(url = location.href) {
+      try {
+        const hostname = new URL(url).hostname.toLowerCase();
+        return hostname === "chatgpt.com" || hostname.endsWith(".chatgpt.com");
+      } catch {
+        return false;
+      }
+    },
+    getAssistantNodes: assistantNodes,
+    latestAssistantNode,
+    getAssistantText: assistantText,
+    getConversationId() {
+      const match = location.pathname.match(/\/c\/([^/?#]+)/i);
+      return match?.[1] || `path:${location.pathname}`;
+    },
+    getMessageId: messageId,
+    getTitle() {
+      const raw = normalizeText(document.title);
+      return raw.replace(/\s*[-–—]\s*ChatGPT\s*$/i, "") || "ChatGPT";
+    },
+    isStreaming() {
+      return Boolean(document.querySelector([
+        'button[data-testid="stop-button"]',
+        'button[aria-label*="Stop" i]',
+        'button[aria-label*="停止"]',
+        '[data-testid="stop-button"]'
+      ].join(",")));
+    },
+    getComposer,
+    findComposerFileInput,
+    getObserverRoot() {
+      return document.documentElement;
+    },
+    getInlineButtonHost(node) {
+      const turn = node?.closest?.('article[data-testid^="conversation-turn"]');
+      if (turn) return turn;
+      const message = node?.closest?.('[data-message-author-role="assistant"]');
+      return message || node?.parentElement || document.body;
+    },
+    insertText,
+    attachFile,
+    attachImage
+  };
 })();

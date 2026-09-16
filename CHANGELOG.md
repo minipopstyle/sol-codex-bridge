@@ -1,5 +1,26 @@
 # 更新日志
 
+## 0.2.14
+
+本次加入 Prism 支持，并完善 Prism 的真实文件附件交接。
+
+### 新增
+
+- **Prism 页面支持**
+  - 支持 `https://prism.openai.com/*`。
+  - 支持读取 Assistant 回复、项目 Context、最近进度、会话记录和 Git Diff。
+  - 支持 Prism 页面内的 `← Sol` / `Codex →` 内联按钮。
+- **Prism 文件与图片附件**
+  - Context、项目文件和项目图片可以作为真实附件发送到 Prism。
+  - 复用 Prism Assistant 的上传控件，不把内容强制转换为文本。
+  - Prism 自身可使用官方 Astra 模型；Bridge 保持模型无关，只负责本地交接。
+
+### 优化
+
+- 修复 Prism 复用隐藏 file input 时被误判为没有上传入口的问题。
+- 拦截插件触发的原生文件选择器，避免发送内存中的附件时额外打开 Finder。
+- 统一使用“当前对话”文案，适配 ChatGPT 和 Prism 两个目标页面。
+
 ## 0.2.13
 
 本次主要继续完善 **Sol ↔ Codex 双向上下文交接**，重点统一两端的内容传输方式，并补齐 Codex → ChatGPT 的长内容处理能力。

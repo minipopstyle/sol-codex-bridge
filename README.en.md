@@ -20,6 +20,8 @@
 
 **Sol ↔ Codex Local Bridge** is a macOS / Windows Chrome extension and local Bridge with two-way handoff: send plans from Sol to Codex, or bring Codex context back to Sol.
 
+It currently supports both ChatGPT and [Prism](https://prism.openai.com/). Both sites can use the same local projects, sessions, context, and file handoff workflow.
+
 It connects the last step between ChatGPT and Codex:
 
 ```text
@@ -32,7 +34,7 @@ Chrome Extension
 Codex Session / Project Files / Git
 ```
 
-Plan and discuss in ChatGPT, then send the current response directly to Codex on your computer.
+Plan and discuss in ChatGPT or Prism, then send the current response directly to Codex on your computer.
 
 No more repeating:
 
@@ -53,7 +55,18 @@ Send either:
 
 The content is handed off to the configured local Codex project or session.
 
-### Codex → Sol context pull
+### Prism support
+
+On Prism, the extension also supports:
+
+- reading the current Assistant response and showing inline `← Sol` / `Codex →` buttons;
+- inserting project context, recent progress, session transcripts, and Git diffs;
+- sending Context and project files as real attachments;
+- attaching project images such as PNG, JPG, and WebP.
+
+Prism uploads use its own Assistant upload control and do not open an extra system file picker. Prism itself can use the official Astra models; the Bridge does not replace or proxy the model, and only hands off local context, files, and sessions.
+
+### Codex → Sol context pull (ChatGPT / Prism)
 
 The latest assistant response includes:
 
@@ -61,14 +74,14 @@ The latest assistant response includes:
 ← Sol        Codex →
 ```
 
-Click `← Sol` to read context from the selected project and session:
+Click `← Sol` to read context for the current ChatGPT or Prism page from the selected project and session:
 
 - recent progress snapshot;
 - session transcript;
 - Git diff;
 - read-only project files and text previews.
 
-Reading is always an explicit user action. The extension only offers **Insert into ChatGPT** and never sends the ChatGPT message automatically.
+Reading is always an explicit user action. The extension only offers **Insert into the current page** and never sends a ChatGPT or Prism message automatically.
 
 ### 📁 Local projects
 
@@ -123,7 +136,7 @@ Useful for:
 ## Workflow
 
 ```text
-① Discuss the requirement in ChatGPT
+① Discuss the requirement in ChatGPT or Prism
         ↓
 ② Produce an implementation plan
         ↓
@@ -135,7 +148,7 @@ Useful for:
         ↓
 ⑥ Send Sol → Codex, or pull Codex → Sol context
         ↓
-⑦ Review the context and manually send the ChatGPT message
+⑦ Review the context and manually send the message in the current page
 ```
 
 ChatGPT handles **Think / Plan**.
@@ -205,15 +218,15 @@ The Pairing Token copied by the installer is pasted automatically. Do not copy o
 
 ### 4. Refresh ChatGPT and the extension
 
-After installing the extension, refresh the ChatGPT page and reopen or refresh the side panel.
+After installing the extension, refresh the ChatGPT or Prism page and reopen or refresh the side panel.
 
-When `← Sol    Codex →` appears beside a conversation, the page integration is ready.
+When `← Sol    Codex →` appears beside a ChatGPT or Prism conversation, the page integration is ready.
 
 ## Usage
 
 ### Create a new Codex task
 
-1. Open the Sol ↔ Codex side panel in ChatGPT.
+1. Open the Sol ↔ Codex side panel in ChatGPT or Prism.
 2. Select a local project.
 3. Select **New project task**.
 4. Click **Send to Codex**.
@@ -245,8 +258,8 @@ The buttons reuse the saved project and send mode.
 2. Select a project and Codex session. If none is selected, the latest active or in-use session is preferred.
 3. Click **Allow read access** the first time.
 4. Choose **Recent progress**, **Session transcript**, **Git diff**, or **Project files**.
-5. Review the context preview and click **Insert into ChatGPT**.
-6. Return to ChatGPT and manually send the message after reviewing it.
+5. Review the context preview and click **Insert into the current conversation**.
+6. Return to the current ChatGPT or Prism page and manually send the message after reviewing it.
 
 Selecting a project is not the same as granting read access. After read access is revoked, the Bridge rejects Context API requests with `403`.
 
@@ -300,7 +313,7 @@ These files are outside the Git repository and are not included in commits.
 The Chrome extension communicates only through:
 
 ```text
-ChatGPT
+ChatGPT / Prism
       ↕
 Chrome Extension
       ↕
