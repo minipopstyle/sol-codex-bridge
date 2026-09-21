@@ -10,10 +10,10 @@
 
 ## What is Sol ↔ Codex?
 
-**Sol ↔ Codex Local Bridge** is a Chrome extension and local Bridge for macOS and Windows. It transfers context between ChatGPT and local Codex projects and sessions.
+**Sol ↔ Codex Local Bridge** is an extension for Codex's built-in browser plus a local Bridge. It transfers context between ChatGPT and local Codex projects and sessions.
 
 ```text
-ChatGPT ↔ Chrome Extension ↔ 127.0.0.1:4329 ↔ Codex Project / Session / Git
+ChatGPT ↔ Codex Built-in Browser Extension ↔ 127.0.0.1:4329 ↔ Codex Project / Session / Git
 ```
 
 ## Features
@@ -31,7 +31,7 @@ Reading is explicit and read-only. The extension inserts the result into the cur
 ### Requirements
 
 - macOS or Windows;
-- Google Chrome;
+- Codex Desktop and its built-in browser;
 - Node.js 18+;
 - Codex CLI / Codex Desktop installed and signed in.
 
@@ -62,15 +62,25 @@ The Bridge uses port `4329`. macOS uses `launchd`; Windows uses the current user
 
 `com.sol-codex.run-in-codex-poc.plist` is a macOS template. Do not double-click it.
 
-### 3. Install the Chrome extension
+### 3. Install the extension in Codex's built-in browser
 
-Open `chrome://extensions`, enable **Developer mode**, choose **Load unpacked**, and select:
+In Codex, open **Settings → Browser → Extension management → Manage**. Choose **Load extension package** or **Load unpacked**, then select:
 
 ```text
 chatgpt-extension/
 ```
 
-### 4. Pair the extension
+### 4. Open ChatGPT for the first time
+
+In Codex's right-side browser panel, open:
+
+```text
+https://chatgpt.com/
+```
+
+Sign in to your ChatGPT account first. Keep the page open, then continue with pairing.
+
+### 5. Pair the extension
 
 The installer generates a Pairing Token and copies it to the clipboard. In ChatGPT:
 
@@ -80,6 +90,10 @@ The installer generates a Pairing Token and copies it to the clipboard. In ChatG
 4. Wait for the project and session lists to refresh.
 
 Pairing is normally a one-time action. The token is stored locally by the extension and Bridge.
+
+### 6. Refresh ChatGPT
+
+After installing or updating the extension, refresh ChatGPT inside Codex's built-in browser. The **Target** and **Read** buttons beside assistant responses confirm that the extension is loaded.
 
 ## Usage
 
@@ -122,7 +136,7 @@ The Bridge does not proactively send task content to third-party services.
 
 ```text
 sol-codex-bridge/
-├── chatgpt-extension/       # ChatGPT Chrome extension
+├── chatgpt-extension/       # Codex built-in browser extension
 ├── bridge/                  # Local Bridge and Context API
 │   └── lib/                 # Codex, project, session, and permission adapters
 ├── Windows/                 # Windows maintenance scripts

@@ -18,14 +18,14 @@
 
 ## Sol ↔ Codex 是什么？
 
-**Sol ↔ Codex Local Bridge** 是一个支持 macOS / Windows 的 Chrome 扩展 + 本地 Bridge，用于在 ChatGPT 与本机 Codex 项目、会话之间传递上下文。
+**Sol ↔ Codex Local Bridge** 是一个运行在 Codex 内置浏览器中的扩展 + 本地 Bridge，用于在 ChatGPT 与本机 Codex 项目、会话之间传递上下文。
 
 它解决的是最后一段交接流程：
 
 ```text
 ChatGPT
     ↕
-Chrome Extension
+Codex 内置浏览器扩展
     ↕
 127.0.0.1:4329 Local Bridge
     ↕
@@ -129,7 +129,7 @@ Local Bridge 负责中间的 **Handoff**。
 ### 环境要求
 
 - macOS 或 Windows；
-- Google Chrome；
+- Codex Desktop 及其内置浏览器；
 - Node.js 18 或更高版本；
 - 已安装并登录的 Codex CLI / Codex Desktop。
 
@@ -168,21 +168,31 @@ powershell -ExecutionPolicy Bypass -File .\Windows\install-run-in-codex-poc.ps1
 
 `com.sol-codex.run-in-codex-poc.plist` 是 macOS 配置模板，不要直接双击。
 
-### 3. 安装 Chrome 扩展
+### 3. 在 Codex 内置浏览器中安装扩展
 
-打开：
+在 Codex 中打开：
 
 ```text
-chrome://extensions
+设置 → 浏览器 → 扩展程序管理 → 管理
 ```
 
 然后：
 
-1. 开启「开发者模式」；
-2. 点击「加载已解压的扩展程序」；
+1. 进入扩展程序管理页面；
+2. 点击「加载扩展包」或「加载未打包的扩展程序」；
 3. 选择仓库中的 `chatgpt-extension` 文件夹。
 
-### 4. 配对
+### 4. 第一次打开 ChatGPT
+
+第一次使用时，在 Codex 右侧面板打开内置浏览器，在地址栏输入：
+
+```text
+https://chatgpt.com/
+```
+
+先登录自己的 ChatGPT 账号。登录完成后保持这个页面打开，再继续配对。
+
+### 5. 配对
 
 安装命令会生成并复制 Pairing Token。回到 ChatGPT，打开任意 Assistant 回复旁的「目标」或「读取」入口：
 
@@ -193,9 +203,9 @@ chrome://extensions
 
 配对 Token 只保存在扩展本地存储和本机 Bridge 配置中。
 
-### 5. 刷新 ChatGPT
+### 6. 刷新 ChatGPT
 
-首次安装或更新扩展后，刷新 ChatGPT 页面。Assistant 回复旁出现 `目标` / `读取` 按钮，即表示扩展已经加载。
+首次安装或更新扩展后，在 Codex 内置浏览器中刷新 ChatGPT 页面。Assistant 回复旁出现 `目标` / `读取` 按钮，即表示扩展已经加载。
 
 ## 使用
 
@@ -263,7 +273,7 @@ Pairing Token 保存在本机 Bridge 配置目录，不会写入 Git 仓库。
 ```text
 ChatGPT
    ↕
-Chrome Extension
+Codex 内置浏览器扩展
    ↕
 127.0.0.1:4329
    ↕
@@ -277,7 +287,7 @@ Bridge 不会主动把任务内容发送到额外的第三方服务。
 ```text
 sol-codex-bridge/
 │
-├── chatgpt-extension/       # ChatGPT Chrome 扩展
+├── chatgpt-extension/       # Codex 内置浏览器扩展
 ├── bridge/                  # 本地 Bridge 与 Context API
 │   └── lib/                 # Codex 状态、Session、文件和权限适配
 ├── Windows/                 # Windows 安装、重启、状态、卸载脚本
@@ -310,7 +320,7 @@ curl http://127.0.0.1:4329/health
 
 | 功能 | macOS | Windows |
 | --- | --- | --- |
-| Chrome Extension | ✅ | ✅ |
+| Codex 内置浏览器扩展 | ✅ | ✅ |
 | Local Bridge | ✅ | ✅ |
 | 项目读取 | ✅ | ✅ |
 | 项目文件 | ✅ | ✅ |
