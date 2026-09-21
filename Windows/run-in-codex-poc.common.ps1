@@ -21,13 +21,10 @@ function Get-NodePath {
 }
 
 function Get-BridgeRoot {
-  $candidates = @()
-  if ($env:SOL_CODEX_BRIDGE_ROOT) { $candidates += $env:SOL_CODEX_BRIDGE_ROOT }
-  $candidates += (Join-Path $env:USERPROFILE ".sol-codex-bridge\app")
-  $candidates += (Join-Path (Split-Path -Parent $script:PublishRoot) "sol-codex-bridge")
-  return $candidates |
-    Where-Object { $_ -and (Test-Path -LiteralPath (Join-Path $_ "bridge\lib\codex-cli.mjs") -PathType Leaf) } |
-    Select-Object -Unique -First 1
+  if (Test-Path -LiteralPath (Join-Path $script:PublishRoot "bridge\lib\codex-cli.mjs") -PathType Leaf) {
+    return $script:PublishRoot
+  }
+  return $null
 }
 
 function Get-ProjectPath {
@@ -132,7 +129,7 @@ function Start-PublishTask {
 function Copy-PairingToken {
   $tokenPath = Join-Path $env:USERPROFILE ".sol-codex-bridge\token"
   if (-not (Test-Path -LiteralPath $tokenPath -PathType Leaf)) {
-    Write-Warning "未找到共享 Pairing Token：$tokenPath。请先安装原版 sol-codex-bridge。"
+    Write-Warning "未找到 Pairing Token：$tokenPath。请先确认 Bridge 已成功启动。"
     return
   }
   $token = (Get-Content -LiteralPath $tokenPath -Raw).Trim()

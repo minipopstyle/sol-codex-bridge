@@ -14,5 +14,4 @@ APP_HOME="$HOME/.sol-codex-run-in-codex-poc-publish"
 
 print -r -- "发布版 Bridge 已卸载干净。"
 print -r -- "已移除：$JOB、$PLIST、$APP_HOME"
-print -r -- "原版 sol-codex-bridge、4319 服务和 Pairing Token 未修改。"
-
+print -r -- "共享 Pairing Token 未修改。"

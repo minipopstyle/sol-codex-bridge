@@ -10,6 +10,9 @@ session-index.json
 .env.*
 *.pem
 *.key
+.bridge.log
+.local.*
+.sol-codex-run-in-codex-poc/
 
 # Generated and platform files
 node_modules/

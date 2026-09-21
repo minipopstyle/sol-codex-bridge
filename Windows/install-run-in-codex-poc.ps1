@@ -11,12 +11,12 @@ try {
   if ([int]$Matches[1] -lt 18) { throw "Node.js 版本过低：$version，需要 18+。" }
 
   $bridgeRoot = Get-BridgeRoot
-  if (-not $bridgeRoot) { throw "找不到原版 sol-codex-bridge。请设置 SOL_CODEX_BRIDGE_ROOT 后重试。" }
+  if (-not $bridgeRoot) { throw "找不到仓库内的 Bridge 依赖。请确认 bridge\lib\codex-cli.mjs 存在。" }
   $projectPath = Get-ProjectPath
   Assert-PortSafe
   Stop-PublishProcesses
-  Write-RuntimeConfig $node $bridgeRoot $projectPath
   Install-RuntimeFiles
+  Write-RuntimeConfig $node $script:AppHome $projectPath
   Register-PublishTask
   Start-PublishTask
   $health = Wait-Health

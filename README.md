@@ -1,447 +1,127 @@
-# Sol ↔ Codex Local Bridge
+# Run in Codex POC
 
-![Sol ↔ Codex Local Bridge cover](assets/cover.png)
+链路：ChatGPT assistant 消息 ↔ Codex 内置浏览器扩展 ↔ `127.0.0.1:4329` 适配层 ↔ Codex 项目/Session。
 
-<p align="center">
-  <strong>让 ChatGPT 与 Codex 在本地安全交换上下文。</strong>
-</p>
+这是独立的 GitHub 发布版：使用 `4329` 端口、独立的 launchd 标识和 `~/.sol-codex-run-in-codex-poc-publish` 运行目录。
 
-<p align="center">
-  Think in ChatGPT. Build in Codex.
-</p>
+目录按职责区分：`bridge/` 是跨平台适配层，`chatgpt-extension/` 是共用浏览器扩展，`Windows/` 和根目录的 macOS `.command` 文件只负责各自平台的后台托管。
 
-<p align="center">
-  <a href="README.md">中文</a> · <a href="README.en.md">English</a>
-</p>
+只使用浏览器原生 API 和 Node 标准库；任务只保存在内存中，并在达到数量或时间上限后清理。
 
----
+## 命令怎么选
 
-## Sol ↔ Codex 是什么？
+普通使用只需要双击下面 4 个 `.command` 文件。它们只管理这个隔离副本，不会改动原项目；GitHub 上传仍由你最后确认后手动执行。
 
-**Sol ↔ Codex Local Bridge** 是一个支持 macOS / Windows 的 Chrome 扩展 + 本地 Bridge，提供两个一级方向：Sol → Codex 发送方案，以及 Codex → Sol 读取本地 Context。
+| 文件 | 用途 | 什么时候点 |
+| --- | --- | --- |
+| `run-in-codex-poc.command` | 安装并启动 | 第一次使用或需要启动时点这个 |
+| `restart-run-in-codex-poc.command` | 启动、同步代码并重启 | 中途挂了、改完代码、扩展无法连接时点这个 |
+| `status-run-in-codex-poc.command` | 查看状态 | 不确定是否运行时先点这个；不会启动或停止 |
+| `uninstall-run-in-codex-poc.command` | 停止并清理发布版 | 想彻底卸载后再重新安装时点这个 |
 
-目前支持 ChatGPT 和 [Prism](https://prism.openai.com/)。两者都可以使用同一套本地项目、会话、Context 和文件交接能力。
+最短判断：安装或启动 → `run-in-codex-poc.command`；挂了或改完代码 → `restart`；只想确认 → `status`；清理重装 → `uninstall`。
 
-它解决的是 ChatGPT 与 Codex 之间最后一段「上下文交接」：
+卸载只删除发布版的 launchd、运行目录和日志，不删除共享 Pairing Token。
 
-```text
-ChatGPT
-    ↕
-Chrome Extension
-    ↕
-127.0.0.1 Local Bridge
-    ↕
-Codex Session / Project Files / Git
-```
+`com.sol-codex.run-in-codex-poc.plist` 只是 macOS 的配置模板，不要双击它；`bridge/`、`chatgpt-extension/`、`tests/` 是代码目录，也不是启动入口。
 
-你可以在 ChatGPT 或 Prism 中完成需求分析、方案设计和任务拆解，然后直接把当前回复发送到本机 Codex。
+如果 macOS 第一次阻止 `.command`，在 Finder 中右键它并选择“打开”，确认一次即可。
 
-不再需要反复：
+脚本使用仓库内的 Bridge 依赖；可以通过 `C2C_PROJECT_PATH` 指定默认项目。运行时 plist 会在安装到当前用户的 LaunchAgents 前动态生成，不提交机器专属路径。
 
-**复制内容 → 切换 Codex → 找项目 → 找会话 → 粘贴上下文。**
+不需要在 Codex Console 粘贴脚本，也不需要手动启动 receiver；回到 ChatGPT 刷新页面后点击 `▶ 在 Codex 执行` 即可。
 
----
+首次使用：双击 `run-in-codex-poc.command`。它会启动发布版 Bridge、保持后台运行，并把 Pairing Token（通常位于 `~/.sol-codex-bridge/token`）复制到剪贴板。回到目标卡片，点击设置按钮左侧的「配对」，粘贴并保存；验证成功后按钮显示「已配对」。关闭安装命令窗口不会停止服务。
 
-## ✨ 核心功能
+## Windows 版
 
-### 🌐 中 / EN 双语界面
+Windows 使用当前用户的任务计划程序托管发布版 Bridge，不需要管理员权限。它继续使用隔离端口 `4329`；原版 `sol-codex-bridge` 的 Windows 服务使用 `37821`，两者不会抢端口。
 
-侧栏和 ChatGPT 页面内联操作支持中文 / English 即时切换，并记住你的语言选择。
+Windows 对外只保留 4 个命令，公共脚本放在 `Windows/`；`run-in-codex-poc.common.ps1` 和 `bridge-launcher.ps1` 是内部文件，不要单独运行：
 
-### 🔗 ChatGPT → Codex 一键发送
+| 文件 | 类型 | 什么时候运行 |
+| --- | --- | --- |
+| `Windows/install-run-in-codex-poc.ps1` | 首次安装 / 更新 | 第一次使用，或需要同步发布版代码时 |
+| `Windows/restart-run-in-codex-poc.ps1` | 重启 | 中途挂了，或更新代码后 |
+| `Windows/status-run-in-codex-poc.ps1` | 查看状态 | 只检查，不启动、不停止 |
+| `Windows/uninstall-run-in-codex-poc.ps1` | 卸载 | 想清理发布版后重新安装时 |
 
-直接读取：
-
-- ChatGPT 最新 Assistant 回复
-- 当前选中的文本
-
-并发送给本机 Codex。
-
-### Prism 支持
-
-在 Prism 页面中同样支持：
-
-- 读取当前 Assistant 回复并显示 `← Sol` / `Codex →` 内联按钮；
-- 把项目上下文、最近进度、会话记录和 Git Diff 插入 Prism；
-- 将 Context 和项目文件作为真实附件发送到 Prism；
-- 发送 PNG / JPG / WebP 等项目图片作为附件。
-
-Prism 的附件上传使用页面自己的 Assistant 上传控件，不会额外弹出系统文件选择器。Prism 页面本身可以使用官方 Astra 模型；Bridge 不替换或代理模型，只负责本地 Context、文件和会话之间的交接。
-
-### Codex → Sol 读取内容（ChatGPT / Prism）
-
-最新 Assistant 回复旁会同时出现：
-
-```text
-← Sol        Codex →
-```
-
-点击 `← Sol` 后，可从当前 ChatGPT 或 Prism 页面对应的项目和会话读取：
-
-- 项目上下文
-- 最近进度 Snapshot
-- Session transcript
-- Git Diff
-- 项目文件只读浏览与文本预览
-
-默认读取“最近进度”。读取内容需要用户操作，并只提供“插入当前页面”，不会自动发送 ChatGPT 或 Prism 消息。
-
-### 📁 本地项目
-
-Bridge 会读取本机 Codex 状态，并显示可用项目。
-
-选择目标项目后，可以直接创建新的 Codex 任务。
-
-> “项目新任务”支持普通文件夹，不要求目录必须是 Git 仓库。
-
-### 💬 继续已有会话
-
-除了创建新任务，也可以直接选择已有 Codex 会话。
-
-新的分析、修改方案或补充需求可以继续追加到原来的 Session 中，保持上下文连续。
-
-### ⚡ 页面内联发送与读取
-
-ChatGPT 最新回复旁会出现：
-
-`← Sol    Codex →`
-
-即使侧栏已经收起，也可以直接发送。
-
-它会自动使用侧栏中保存的：
-
-- 本地项目
-- 发送方式
-- 目标会话
-
-### ⏱️ 执行状态
-
-创建新任务后会显示：
-
-- 执行动画
-- 实时计时
-- 当前运行状态
-
-若开启“发送后切换到 Codex”，任务完成后会自动打开 Codex。
-
----
-
-## 两种发送方式
-
-### 01 · 项目新任务
-
-把当前 ChatGPT 内容作为新的 Codex Task 执行。
-
-适合：
-
-- 新功能开发
-- Bug 修复
-- UI 改造
-- 重构
-- 独立开发任务
-
-### 02 · 已有会话
-
-把当前内容继续发送到已经存在的 Codex Session。
-
-适合：
-
-- 继续未完成任务
-- 修改上一版实现
-- 补充新需求
-- 根据新的分析继续迭代
-- 保留已有上下文
-
----
-
-## 工作流
-
-```text
-① 在 ChatGPT 或 Prism 中讨论需求
-        ↓
-② 得到实施方案
-        ↓
-③ 在 Side Panel 选择方向并读取当前回复
-        ↓
-④ 选择本地项目
-        ↓
-⑤ 选择「项目新任务」或「已有会话」
-        ↓
-⑥ Sol → Codex 发送，或 Codex → Sol 读取 Context
-        ↓
-⑦ 检查后手动发送到当前页面
-```
-
-ChatGPT 负责 **Think / Plan**。
-
-Codex 负责 **Build / Run**。
-
-Local Bridge 负责中间的 **Handoff**。
-
-读取内容是显式、只读的用户操作；Bridge 不会主动上传本地代码。
-
----
-
-## 安装
-
-### 环境要求
-
-支持：
-
-- macOS 或 Windows
-- Google Chrome
-- Node.js 18+
-- 已安装并登录的 Codex CLI
-
-### 1. 安装 Local Bridge
-
-macOS：打开 `macOS` 文件夹并双击：
-
-```text
-macOS/install-bridge.command
-```
-
-Windows：在 PowerShell 中运行：
+在 PowerShell 中运行首次安装：
 
 ```powershell
-cd .\Windows
-.\install-bridge.ps1
+cd C:\path\to\sol-codex-bridge
+powershell -ExecutionPolicy Bypass -File .\Windows\install-run-in-codex-poc.ps1
 ```
 
-安装完成后会生成一个 **Pairing Token**，并自动复制到剪贴板。
+安装脚本会使用当前仓库内的 Bridge 依赖，并将运行时复制到独立目录。安装后会复制 Pairing Token 到剪贴板。PowerShell 窗口可以关闭，Bridge 由任务计划程序继续运行。
 
-Windows 安装器会注册当前用户登录时启动的任务计划程序任务 `Sol Codex Local Bridge`，无需管理员权限。
+Windows 版卸载只删除发布版任务、运行目录和日志，不删除共享 Pairing Token。
 
-### 平台维护脚本
-
-| 操作 | macOS（在 `macOS` 文件夹中双击） | Windows（先执行 `cd .\Windows`） |
-| --- | --- | --- |
-| 安装 / 更新 | `install-bridge.command` | `.\install-bridge.ps1` |
-| 重启 Bridge | `restart-bridge.command` | `.\restart-bridge.ps1` |
-| 诊断 | `diagnose.command` | `.\diagnose.ps1` |
-| 卸载 | `uninstall-bridge.command` | `.\uninstall-bridge.ps1` |
-
-### 2. 安装 Chrome 扩展
-
-打开：
-
-```text
-chrome://extensions
-```
-
-然后：
-
-1. 开启右上角「开发者模式」
-2. 点击「加载已解压的扩展程序」
-3. 选择项目中的 `extension` 文件夹
-
-### 3. 连接 Bridge
-
-打开扩展侧栏。
-
-安装脚本复制的 **Pairing Token** 会自动粘贴。安装和连接期间，请不要复制其他文字，否则会覆盖配对码。
-
-连接成功后即可读取本机 Codex 项目和会话。
-
-### 4. 刷新 ChatGPT 和插件
-
-首次安装扩展后，请刷新 ChatGPT 或 Prism 网页，并重新打开或刷新扩展侧栏。
-
-当 ChatGPT 或 Prism 会话右下角出现 `← Sol    Codex →` 按钮，表示页面数据已刷新成功。
-
----
-
-## 使用
-
-### 创建新的 Codex 任务
-
-1. 在 ChatGPT 或 Prism 打开 Sol ↔ Codex 侧栏
-2. 选择本地项目
-3. 选择 **项目新任务**
-4. 点击 **发送到 Codex**
-5. 等待任务执行
-
-执行过程中会显示动画和计时。
-
-若开启“发送后切换到 Codex”，完成后会自动打开 Codex。
-
-### 发送到已有 Codex 会话
-
-1. 选择 **已有会话**
-2. 选择目标 Session
-3. 点击 **发送到 Codex**
-
-Bridge 会把当前 ChatGPT 内容追加到这个会话，而不是重新创建任务。
-
-### 快速发送
-
-完成一次配置后，可以收起侧栏。
-
-直接点击 ChatGPT 回复旁的：
-
-```text
-← Sol    Codex →
-```
-
-即可使用之前保存的项目和发送方式快速发送。
-
-### Codex → Sol：读取 Context
-
-1. 在侧栏切换到 **Codex → Sol**
-2. 选择项目；需要会话的内容会优先使用活跃/使用中的最新会话
-3. 首次读取时点击“允许读取”
-4. 选择“项目上下文”“最近进度”“会话记录”“Git Diff”或“项目文件”
-5. 检查 Context Preview 后点击“插入当前对话”
-6. 回到当前 ChatGPT 或 Prism 页面，确认内容后由用户手动发送
-
-“项目被选择”不等于“允许读取”。关闭读取权限后，Bridge 会对 Context API 返回 `403`。
-
----
-
-## 🔒 Local First
-
-Sol → Codex Local Bridge 采用本地优先的设计。
-
-### Bridge
-
-Bridge 仅监听：
-
-```text
-127.0.0.1:37821
-```
-
-不会监听公网地址。
-
-### Pairing Token
-
-除健康检查外，Bridge API 都需要 Pairing Token。
-
-Token 用于防止其他网页或本机程序未经授权调用 Bridge。
-
-### Context Read Permission
-
-读取项目代码、Git 信息和 Session Context 前，必须针对项目显式授权。授权保存为 `readAllowedProjects` 的 normalized realpath；撤销后服务端会拒绝读取，而不仅是隐藏 UI。
-
-Workspace Guard 会拒绝项目外路径、symlink escape、`.env`、密钥、`.git`、`node_modules`、构建产物和二进制文件。项目文件 API 只接受 `projectPath + relativePath`，不接受任意 `sourcePath`。
-
-### 本地数据
-
-以下数据存储在：
-
-```text
-~/.sol-codex-bridge/
-```
-
-包括：
-
-- Pairing Token
-- Bridge 日志
-- 项目配置
-- Codex 会话缓存
-- Context 读取授权
-- 不含完整 prompt 的 Handoff ledger
-
-这些数据不属于 Git 仓库，也不会随项目提交。
-
-### 网络请求
-
-Chrome 扩展只与以下目标通信：
-
-```text
-ChatGPT / Prism
-      ↕
-Chrome Extension
-      ↕
-127.0.0.1 Local Bridge
-      ↕
-Codex
-```
-
-Bridge 不会主动把任务内容发送到额外的第三方服务。
-
----
-
-## 项目结构
-
-```text
-sol-codex-bridge/
-│
-├── extension/               # Chrome 扩展
-├── bridge/                  # 本地 Bridge 服务与只读 Context API
-│   └── lib/
-│       ├── platform/        # macOS / Windows 平台适配
-│       ├── workspace-guard.mjs
-│       ├── codex-transcript.mjs
-│       ├── project-context.mjs
-│       ├── context-bundle.mjs
-│       └── handoff-ledger.mjs
-├── macOS/                   # 仅 macOS 用户使用
-│   ├── install-bridge.command
-│   ├── restart-bridge.command
-│   ├── diagnose.command
-│   └── uninstall-bridge.command
-├── Windows/                 # 仅 Windows 用户使用
-│   ├── install-bridge.ps1
-│   ├── restart-bridge.ps1
-│   ├── diagnose.ps1
-│   └── uninstall-bridge.ps1
-├── assets/                  # README / 项目图片
-└── README.md
-```
-
----
-
-## 验证
-
-Bridge 提供本地自检：
+手动启动方式（仅排查使用）：
 
 ```sh
-cd bridge
-npm run self-test
+cd /path/to/sol-codex-bridge
+node bridge/server.mjs
 ```
 
-安装或更新扩展后，建议分别测试两个方向、项目/会话保持、`← Sol` Quick Pull 和 `Codex →` 发送链路，确保 ChatGPT ↔ Bridge ↔ Codex 整条链路工作正常。
+验证 Bridge：
 
----
-
-## 当前定位
-
-Sol ↔ Codex 并不是另一个 Coding Agent。
-
-它只负责解决一个问题：
-
-> **让 ChatGPT 的规划与 Codex 的本地执行环境，在用户确认下交换上下文。**
-
-```text
-ChatGPT / Sol
-      ↕
-  Local Context Bridge
-      ↕
-Codex Session / Project / Git
+```sh
+curl http://127.0.0.1:4329/health
 ```
 
----
+## macOS Bridge 管理
 
-## 平台支持
+Bridge 由 `launchd` 托管；命令执行完后，关闭 Terminal 窗口不会停止它。重启、暂停和停止只影响这个隔离副本安装的 POC Bridge，不会停止已有的 `sol-codex-bridge`。
 
-| 功能 | macOS | Windows |
-| --- | --- | --- |
-| Chrome Extension | ✅ | ✅ |
-| Local Bridge | ✅ | ✅ |
-| 项目读取 | ✅ | ✅ |
-| 项目文件 | ✅ | ✅ |
-| Session | ✅ | ✅ |
-| Git Diff | ✅ | ✅ |
-| 已有会话发送 | ✅ | ✅ |
-| 项目新任务 | ✅ | ✅ |
-| 打开 Codex Desktop | ✅ | ✅ / capability |
+## 加载 ChatGPT 扩展
 
-Windows 首版使用 Codex CLI 执行，Desktop 深链仅作为可选打开动作；CLI 成功不依赖 Desktop。
+1. 在 Codex 内置浏览器的设置中打开“扩展程序”。
+2. 开启 Developer mode。
+3. 选择“加载未打包的扩展程序”，选择 `chatgpt-extension/`。
+4. 打开或刷新 ChatGPT 对话。
+5. assistant 回复底部会出现 `▶ 在 Codex 执行`。
 
----
+## 目标选择
 
-## License
+点击旁边的「目标」打开选择卡片，必须明确选择已有 Session 或项目新任务。
 
-当前仓库暂未附带 License。
+选择卡片支持：
 
-正式公开发布前，请选择并添加合适的开源许可证。
+- 指定项目中的已有 Session
+- 在指定项目创建新 Codex 任务
+
+发送时适配层直接复用已有 `sol-codex-bridge` 的 `queueToSession()`、`launchNewTask()` 和 Session 索引。
+
+已有会话发送成功后，会复用 `sol-codex-bridge` 的 `openSessionInCodex(sessionId)`，通过 `codex://threads/<sessionId>` 将 Codex Desktop 切到目标项目和会话页面。
+
+打开「目标」卡片后，卡片顶部可在「发送到 Codex」和「读取」两个同级 Tab 之间切换。读取页可在同一个 Project / Session 目标下读取最近进度、项目上下文、Session transcript、Git Diff 和项目文件。首次读取项目需要授权；授权状态由 Bridge 服务端保存和校验。读取结果只会预览，点击「插入 ChatGPT」才写入当前 Composer，不会自动发送。
+
+卡片右上角齿轮打开共享设置，支持 `auto`、`text`、`file` 三种传输方式，同时作用于「发送到 Codex」和「读取」。大内容在 `auto` 下使用本地 `sol-codex-bridge` 的 Markdown handoff artifact；读取到 ChatGPT 时上传入口不可用则回退为文本。项目与 Session 仍来自已有状态索引，Composer 插入也复用其站点适配逻辑。
+
+Context 适配层只接线到已有的 `workspace-guard.mjs`、`codex-transcript.mjs`、`project-context.mjs`、`context-bundle.mjs` 和 `project-files.mjs`，不使用 MCP，也不接受项目外的绝对文件路径。
+
+任务顺序为 `queued → accepted → running → executed`；这里的 `executed` 表示输入已提交到 Codex 队列，实际 turn 仍由 Codex 执行。
+
+## 验证任务状态
+
+Bridge 提供最小调试接口（需要 Pairing Token）：
+
+```sh
+curl -H "X-Bridge-Token: $(cat ~/.sol-codex-bridge/token)" http://127.0.0.1:4329/tasks/<taskId>
+```
+
+## 测试
+
+```sh
+node --test tests/*.mjs
+```
+
+覆盖创建、领取、去重、合法状态流转、非法状态流转、workspace 隔离，以及 Context 路由的语法和现有发送链路回归。
+
+## POC 边界
+
+- 任务和目标设置仍保存在本地内存/扩展存储中，没有数据库、WebSocket 或自动 Review。
+- 不使用 `locked`、最近更新时间或其它启发式推断原生 UI 当前高亮的 Session；目标必须显式选择。
+- ChatGPT Composer 适配集中在 `chatgpt-extension/chatgpt-site.js`。
+- 失败重试依赖重新点击；Bridge 重启会丢失内存任务。

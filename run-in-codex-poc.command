@@ -4,7 +4,6 @@ set -u
 
 PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BRIDGE_URL="http://127.0.0.1:4329"
-EXISTING_BRIDGE="${SOL_CODEX_BRIDGE_ROOT:-$PROJECT_DIR/../../ChatGPT-with-Codex/sol-codex-bridge}"
 APP_HOME="${SOL_CODEX_POC_HOME:-$HOME/.sol-codex-run-in-codex-poc-publish}"
 PROJECT_PATH="${C2C_PROJECT_PATH:-$PROJECT_DIR}"
 NODE_BIN="${NODE_BIN:-$(command -v node || true)}"
@@ -27,8 +26,8 @@ check_source() {
     print -r -- "找不到 Node.js，请设置 NODE_BIN。"
     return 1
   fi
-  if [[ ! -f "$EXISTING_BRIDGE/bridge/lib/codex-cli.mjs" ]]; then
-    print -r -- "找不到已有 sol-codex-bridge：$EXISTING_BRIDGE"
+  if [[ ! -f "$PROJECT_DIR/bridge/lib/codex-cli.mjs" ]]; then
+    print -r -- "发布版 Bridge 依赖不完整：$PROJECT_DIR/bridge/lib/codex-cli.mjs"
     return 1
   fi
 }
@@ -42,7 +41,7 @@ sync_runtime() {
   /usr/bin/plutil -insert "ProgramArguments.0" -string "$NODE_BIN" "$INSTALLED_PLIST"
   /usr/bin/plutil -insert "ProgramArguments.1" -string "$APP_HOME/bridge/server.mjs" "$INSTALLED_PLIST"
   /usr/bin/plutil -replace "WorkingDirectory" -string "$APP_HOME" "$INSTALLED_PLIST"
-  /usr/bin/plutil -replace "EnvironmentVariables.SOL_CODEX_BRIDGE_ROOT" -string "$EXISTING_BRIDGE" "$INSTALLED_PLIST"
+  /usr/bin/plutil -replace "EnvironmentVariables.SOL_CODEX_BRIDGE_ROOT" -string "$APP_HOME" "$INSTALLED_PLIST"
   /usr/bin/plutil -replace "EnvironmentVariables.C2C_PROJECT_PATH" -string "$PROJECT_PATH" "$INSTALLED_PLIST"
   /usr/bin/plutil -replace "StandardOutPath" -string "$APP_HOME/bridge.log" "$INSTALLED_PLIST"
   /usr/bin/plutil -replace "StandardErrorPath" -string "$APP_HOME/bridge.log" "$INSTALLED_PLIST"

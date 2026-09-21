@@ -22,7 +22,9 @@ test("Windows publish scripts use the isolated task and port", () => {
   assert.match(common, /\$script:Port = 4329/);
   assert.match(common, /Sol Codex POC Publish Bridge/);
   assert.match(common, /Register-ScheduledTask/);
-  assert.match(common, /SOL_CODEX_BRIDGE_ROOT/);
+
+  const launcher = fs.readFileSync(path.join(windowsRoot, "bridge-launcher.ps1"), "utf8");
+  assert.match(launcher, /SOL_CODEX_BRIDGE_ROOT/);
 
   const install = fs.readFileSync(path.join(windowsRoot, "install-run-in-codex-poc.ps1"), "utf8");
   const uninstall = fs.readFileSync(path.join(windowsRoot, "uninstall-run-in-codex-poc.ps1"), "utf8");

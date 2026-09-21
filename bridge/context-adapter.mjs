@@ -2,8 +2,7 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const pocRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-export const bridgeRoot = process.env.SOL_CODEX_BRIDGE_ROOT
-  || path.resolve(pocRoot, "../../ChatGPT-with-Codex/sol-codex-bridge");
+export const bridgeRoot = process.env.SOL_CODEX_BRIDGE_ROOT || pocRoot;
 
 let modulesPromise;
 
