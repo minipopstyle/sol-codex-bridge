@@ -331,6 +331,4 @@ curl http://127.0.0.1:4329/health
 
 ## License
 
-当前仓库暂未附带 License。
-
-正式公开发布前，请选择并添加合适的开源许可证。
+本项目使用 [MIT License](LICENSE)。

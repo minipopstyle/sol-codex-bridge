@@ -158,4 +158,4 @@ curl http://127.0.0.1:4329/health
 
 ## License
 
-No license is currently included. Add an appropriate open-source license before publishing the repository formally.
+This project is licensed under the [MIT License](LICENSE).
