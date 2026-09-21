@@ -1,0 +1,43 @@
+{
+  "manifest_version": 3,
+  "name": "Run in Codex POC",
+  "version": "0.4.0",
+  "description": "Read Codex context into ChatGPT and send ChatGPT assistant messages to a local Codex bridge.",
+  "icons": {
+    "16": "icons/cat-16.png",
+    "32": "icons/cat-32.png",
+    "48": "icons/cat-48.png",
+    "128": "icons/cat-128.png"
+  },
+  "permissions": [
+    "storage"
+  ],
+  "host_permissions": [
+    "https://chatgpt.com/*",
+    "https://chat.openai.com/*",
+    "http://127.0.0.1:4329/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://chatgpt.com/*",
+        "https://chat.openai.com/*"
+      ],
+      "js": ["context-actions.js", "chatgpt-site.js", "content.js"],
+      "css": ["content.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "Run in Codex POC",
+    "default_icon": {
+      "16": "icons/cat-16.png",
+      "32": "icons/cat-32.png",
+      "48": "icons/cat-48.png",
+      "128": "icons/cat-128.png"
+    }
+  }
+}

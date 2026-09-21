@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.sol-codex.run-in-codex-poc-publish</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>__NODE_BIN__</string>
+    <string>__APP_HOME__/bridge/server.mjs</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>__APP_HOME__</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin</string>
+    <key>C2C_BRIDGE_PORT</key>
+    <string>4329</string>
+    <key>SOL_CODEX_BRIDGE_ROOT</key>
+    <string>__SOL_CODEX_BRIDGE_ROOT__</string>
+    <key>C2C_PROJECT_PATH</key>
+    <string>__C2C_PROJECT_PATH__</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ProcessType</key>
+  <string>Background</string>
+  <key>StandardOutPath</key>
+  <string>__APP_HOME__/bridge.log</string>
+  <key>StandardErrorPath</key>
+  <string>__APP_HOME__/bridge.log</string>
+</dict>
+</plist>
