@@ -1,11 +1,12 @@
 (() => {
   const WIDGET_ATTR = "data-codex-run-widget";
-  const MESSAGE_ATTRS = ["data-message-id", "data-testid"];
+  const MESSAGE_ATTRS = ["data-message-id", "data-chatgpt-selection-message-id", "data-testid"];
   let fallbackMessageIndex = 0;
 
   const assistantSelectors = [
     '[data-message-author-role="assistant"]',
     '[data-testid*="conversation-turn"] [data-message-author-role="assistant"]',
+    '[data-chatgpt-selection-message-id]:has([data-markdown-text-style="assistant-message"])',
   ];
 
   function assistantMessages() {
@@ -13,7 +14,7 @@
     return assistantSelectors
       .flatMap((selector) => [...document.querySelectorAll(selector)])
       .filter((node) => {
-        if (seen.has(node) || node.closest(`[${WIDGET_ATTR}]`)) return false;
+        if (seen.has(node) || node.closest(`[${WIDGET_ATTR}]`) || [...seen].some((other) => other.contains?.(node) || node.contains?.(other))) return false;
         seen.add(node);
         return true;
       });
@@ -31,6 +32,7 @@
     if (!node) return "";
     if (node.nodeType === 3 || node.nodeType === 4) return node.nodeValue || node.textContent || "";
     if (node.nodeType !== 1 || node.matches?.(`[${WIDGET_ATTR}]`)) return "";
+    if (node.getAttribute?.("data-markdown-copy") === "exclude") return "";
 
     const tag = String(node.tagName || "").toLowerCase();
     const content = childNodesOf(node).map(inlineMarkdown).join("");
@@ -38,7 +40,7 @@
     if (tag === "strong" || tag === "b") return `**${content}**`;
     if (tag === "em" || tag === "i") return `*${content}*`;
     if (tag === "del" || tag === "s") return `~~${content}~~`;
-    if (tag === "code") return `\`${content}\``;
+    if (tag === "code" || node.getAttribute?.("data-markdown-copy") === "inline-code") return `\`${content}\``;
     if (tag === "a") {
       const href = node.getAttribute?.("href");
       return href && content ? `[${content}](${href})` : content;
@@ -76,11 +78,13 @@
     if (!node) return "";
     if (node.nodeType === 3 || node.nodeType === 4) return normalizeText(node.nodeValue || node.textContent).trim();
     if (node.nodeType !== 1 || node.matches?.(`[${WIDGET_ATTR}]`)) return "";
+    if (node.getAttribute?.("data-markdown-copy") === "exclude") return "";
 
     const tag = String(node.tagName || "").toLowerCase();
-    if (tag === "pre") {
-      const code = node.querySelector?.("code");
-      const value = normalizeText(code?.textContent ?? node.textContent).replace(/\n+$/, "");
+    if (tag === "pre" || node.getAttribute?.("data-markdown-copy") === "code-block") {
+      const pre = tag === "pre" ? node : node.querySelector("pre");
+      const code = pre?.querySelector?.("code");
+      const value = normalizeText(code?.textContent ?? pre?.textContent ?? "").replace(/\n+$/, "");
       return `\`\`\`${codeLanguage(node)}\n${value}\n\`\`\``;
     }
     if (tag === "ul" || tag === "ol") return listMarkdown(node);
@@ -102,7 +106,7 @@
   function textFor(node) {
     const clone = node.cloneNode(true);
     clone.querySelectorAll(`[${WIDGET_ATTR}]`).forEach((widget) => widget.remove());
-    const root = clone.querySelector?.(".markdown") || clone;
+    const root = clone.querySelector?.('[data-markdown-text-style="assistant-message"]') || clone.querySelector?.(".markdown") || clone;
     const blocks = [...(root.children || [])].map(blockMarkdown).filter(Boolean);
     return (blocks.join("\n\n") || normalizeText(clone.innerText || clone.textContent || "")).trim();
   }

@@ -7,7 +7,7 @@ import { test } from "node:test";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
-test("reads the complete assistant message when the button is clicked", async () => {
+for (const modern of [false, true]) test(`reads and mounts the complete ${modern ? "current Codex browser" : "legacy"} assistant message`, async () => {
   const sent = [];
   const created = [];
   let click;
@@ -30,9 +30,20 @@ test("reads the complete assistant message when the button is clicked", async ()
   });
   const code = elementNode("code", [textNode("function greet(name) {\n  return `Hello, ${name}!`;\n}\n\nconsole.log(greet(\"Sol\"));")]);
   const pre = elementNode("pre", [code]);
+  const codeBlock = elementNode("div", [pre], {
+    getAttribute(name) { return name === "data-markdown-copy" ? "code-block" : null; },
+    querySelector(selector) {
+      if (selector === "pre") return pre;
+      if (selector.includes("font-medium")) return { textContent: "JavaScript" };
+      return null;
+    },
+  });
   const markdown = elementNode("div", [
     elementNode("p", [textNode("这是一段 Markdown + 代码测试文本。")]),
-    pre,
+    elementNode("p", [textNode("Inline: "), elementNode(modern ? "span" : "code", [textNode("status")], {
+      getAttribute(name) { return modern && name === "data-markdown-copy" ? "inline-code" : null; },
+    })]),
+    modern ? codeBlock : pre,
     elementNode("p", [textNode("正常情况下，上面应该显示为独立代码块。")]),
   ], { className: "markdown" });
   const makeElement = (tagName = "div") => {
@@ -69,14 +80,16 @@ test("reads the complete assistant message when the button is clicked", async ()
   const assistant = {
     classList: { add() {} },
     currentText: "这",
-    append() {},
+    append(child) { this.widget = child; },
     closest() { return null; },
-    getAttribute() { return null; },
-    querySelector() { return null; },
+    getAttribute(name) { return modern && name === "data-chatgpt-selection-message-id" ? "message-current" : null; },
+    querySelector() { return this.widget || null; },
     cloneNode() {
       return {
         querySelectorAll() { return []; },
-        querySelector(selector) { return selector === ".markdown" ? markdown : null; },
+        querySelector(selector) {
+          return selector === (modern ? '[data-markdown-text-style="assistant-message"]' : ".markdown") ? markdown : null;
+        },
         get innerText() { return assistant.currentText; },
         textContent: assistant.currentText,
       };
@@ -107,7 +120,8 @@ test("reads the complete assistant message when the button is clicked", async ()
       createElementNS: makeElement,
       querySelector() { return null; },
       querySelectorAll(selector) {
-        return selector.includes("button") ? created.filter((element) => element.tagName === "button") : [assistant];
+        if (selector.includes("button")) return created.filter((element) => element.tagName === "button");
+        return selector === (modern ? '[data-chatgpt-selection-message-id]:has([data-markdown-text-style="assistant-message"])' : '[data-message-author-role="assistant"]') ? [assistant] : [];
       },
     },
     MutationObserver: class { observe() {} },
@@ -115,6 +129,7 @@ test("reads the complete assistant message when the button is clicked", async ()
 
   vm.runInNewContext(fs.readFileSync(path.join(root, "chatgpt-extension/content.js"), "utf8"), context);
   assert.equal(typeof click, "function");
+  assert.ok(assistant.widget, "the current assistant DOM must get a widget");
 
   assistant.currentText = "渲染后的可见文本";
   const button = created.find((element) => element.className.includes("sol-codex-push-btn"));
@@ -124,6 +139,8 @@ test("reads the complete assistant message when the button is clicked", async ()
   assert.ok(taskMessage);
   assert.equal(taskMessage.payload.text, [
     "这是一段 Markdown + 代码测试文本。",
+    "",
+    "Inline: `status`",
     "",
     "```JavaScript",
     "function greet(name) {",
@@ -138,6 +155,7 @@ test("reads the complete assistant message when the button is clicked", async ()
   assert.equal(taskMessage.payload.mode, "queue");
   assert.equal(taskMessage.payload.projectPath, "/tmp/project");
   assert.equal(taskMessage.payload.transferMode, "auto");
+  if (modern) assert.equal(taskMessage.payload.messageId, "message-current");
 
   assert.equal(button.dataset.state, "accepted");
   const loader = button.querySelector(".sol-codex-loader-grid");
